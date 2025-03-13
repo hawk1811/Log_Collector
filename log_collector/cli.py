@@ -558,9 +558,25 @@ class CLI:
             if result["success"]:
                 print(f"{Fore.GREEN}Source updated successfully.{ColorStyle.RESET_ALL}")
                 
-                # Restart listeners and processors to apply changes
-                self.processor_manager.update_processors()
-                self.listener_manager.update_listeners()
+                # Restart services using the same approach as in _add_source
+                print(f"\n{Fore.CYAN}Applying changes...{ColorStyle.RESET_ALL}")
+                
+                try:
+                    # Stop all services
+                    print(f"- Stopping all services...")
+                    self.processor_manager.stop()
+                    self.listener_manager.stop()
+                    
+                    # Start all services with new configuration
+                    print(f"- Starting all services with new configuration...")
+                    self.processor_manager.start()
+                    self.listener_manager.start()
+                    
+                    print(f"{Fore.GREEN}Changes applied successfully.{ColorStyle.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.RED}Error applying changes: {e}{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Source configuration saved, but service update may be incomplete.{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
             else:
                 print(f"{Fore.RED}Failed to update source: {result['error']}{ColorStyle.RESET_ALL}")
         else:
@@ -586,9 +602,25 @@ class CLI:
         if result["success"]:
             print(f"{Fore.GREEN}Source deleted successfully.{ColorStyle.RESET_ALL}")
             
-            # Restart listeners and processors to apply changes
-            self.processor_manager.update_processors()
-            self.listener_manager.update_listeners()
+            # Restart services using the same approach as in _add_source
+            print(f"\n{Fore.CYAN}Applying changes...{ColorStyle.RESET_ALL}")
+            
+            try:
+                # Stop all services
+                print(f"- Stopping all services...")
+                self.processor_manager.stop()
+                self.listener_manager.stop()
+                
+                # Start all services with new configuration
+                print(f"- Starting all services with new configuration...")
+                self.processor_manager.start()
+                self.listener_manager.start()
+                
+                print(f"{Fore.GREEN}Changes applied successfully.{ColorStyle.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.RED}Error applying changes: {e}{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}Source deleted, but service update may be incomplete.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
         else:
             print(f"{Fore.RED}Failed to delete source: {result['error']}{ColorStyle.RESET_ALL}")
         
@@ -720,21 +752,29 @@ class CLI:
         
         # Configure health check
         print(f"\n{Fore.CYAN}Testing health check connection...{ColorStyle.RESET_ALL}")
+        
+        # Store current running state to restore it if needed
+        was_running = hasattr(self.health_check, 'running') and self.health_check.running
+        
+        # Stop health check if it's running
+        if was_running:
+            self.health_check.stop()
+        
         if self.health_check.configure(hec_url, hec_token, interval):
             print(f"{Fore.GREEN}Health check configured successfully.{ColorStyle.RESET_ALL}")
             
             # Auto-start health check
             if self.health_check.start():
-                print(f"{Fore.GREEN}Health check monitoring started automatically.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.GREEN}Health check monitoring started.{ColorStyle.RESET_ALL}")
             else:
                 print(f"{Fore.RED}Failed to start health check monitoring.{ColorStyle.RESET_ALL}")
-                
-            print("\nReturning to main menu...")
-            input("Press Enter to continue...")
-            clear()  # Ensure screen is cleared before returning
-            return  # Return to previous menu after successful configuration
         else:
             print(f"{Fore.RED}Failed to configure health check.{ColorStyle.RESET_ALL}")
+            
+            # Restore previous health check state if possible
+            if was_running and hasattr(self.health_check, 'config') and self.health_check.config is not None:
+                if self.health_check.start():
+                    print(f"{Fore.YELLOW}Restored previous health check configuration.{ColorStyle.RESET_ALL}")
         
         input("Press Enter to continue...")
         clear()  # Clear screen when returning
@@ -772,6 +812,41 @@ class CLI:
                 queue_size = 0
                 if source_id in self.processor_manager.queues:
                     queue_size = self.processor_manager.queues[source_id].qsize()
+                
+                # Count active processors
+                active_processors = sum(1 for p_id, p_thread in self.processor_manager.processors.items()
+                                      if p_id.startswith(f"{source_id}:") and p_thread.is_alive())
+                
+                # Check if listener is active
+                listener_port = source["listener_port"]
+                listener_protocol = source["protocol"]
+                listener_key = f"{listener_protocol}:{listener_port}"
+                listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
+                
+                print(f"\nSource: {source['source_name']}")
+                print(f"  - IP: {source['source_ip']}")
+                print(f"  - Port: {source['listener_port']} ({source['protocol']})")
+                print(f"  - Target: {source['target_type']}")
+                print(f"  - Queue Size: {queue_size}")
+                print(f"  - Active Processors: {active_processors}")
+                print(f"  - Listener Active: {listener_active}")
+        else:
+            print(f"\n{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
+        
+        # Health check status
+        print(f"\n{Fore.CYAN}Health Check Status:{ColorStyle.RESET_ALL}")
+        is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
+        is_running = is_configured and self.health_check.running
+        
+        if is_configured:
+            print(f"  - Configured: Yes")
+            print(f"  - Status: {'Running' if is_running else 'Stopped'}")
+            print(f"  - Interval: {self.health_check.config['interval']} seconds")
+        else:
+            print(f"  - Configured: No")
+        
+        print(f"\n{Fore.CYAN}Press Enter to return to the main menu...{ColorStyle.RESET_ALL}")
+        input()  # Wait for user input before returning to main menu
 
     def _exit_application(self):
         """Exit the application cleanly."""

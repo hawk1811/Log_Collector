@@ -144,6 +144,10 @@ class CLI:
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
     
+"""
+Focused fix for the add_source method in the CLI class to prevent freezing.
+"""
+
     def _add_source(self):
         """Add a new log source."""
         clear()
@@ -194,7 +198,7 @@ class CLI:
                 print(f"{Fore.RED}Invalid port. Please enter a valid number.{ColorStyle.RESET_ALL}")
         
         # Get protocol - simplified to accept single letter with UDP as default
-        protocol = prompt("Protocol (u-UDP, t-TCP) [UDP]: ")
+        protocol = prompt("Protocol (u/t) [u for UDP, t for TCP]: ")
         if protocol.lower() == 't':
             source_data["protocol"] = "TCP"
         else:
@@ -285,19 +289,60 @@ class CLI:
         if result["success"]:
             print(f"{Fore.GREEN}Source added successfully with ID: {result['source_id']}{ColorStyle.RESET_ALL}")
             
-            # Restart listeners and processors to apply changes
-            print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
-            self.processor_manager.update_processors()
-            self.listener_manager.update_listeners()
-            print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
-            
-            print("\nReturning to main menu...")
-            input("Press Enter to continue...")
-            clear()  # Ensure screen is cleared before returning
-            return  # Return to previous menu after successful addition
+            # Safely restart listeners and processors with timeout protection
+            try:
+                print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
+                
+                # Use a timeout to prevent freezing
+                import threading
+                import time
+                
+                def update_with_timeout(manager_name, manager, timeout=5):
+                    """Update manager with timeout protection."""
+                    def update_task():
+                        try:
+                            if manager_name == "processor":
+                                manager.update_processors()
+                            elif manager_name == "listener":
+                                manager.update_listeners()
+                        except Exception as e:
+                            print(f"{Fore.RED}Error updating {manager_name}: {e}{ColorStyle.RESET_ALL}")
+                    
+                    update_thread = threading.Thread(target=update_task)
+                    update_thread.daemon = True  # Set as daemon so it doesn't block program exit
+                    update_thread.start()
+                    update_thread.join(timeout)  # Wait with timeout
+                    
+                    if update_thread.is_alive():
+                        print(f"{Fore.YELLOW}Warning: {manager_name} update is taking longer than expected.{ColorStyle.RESET_ALL}")
+                        print(f"{Fore.YELLOW}Continuing without waiting to avoid freezing.{ColorStyle.RESET_ALL}")
+                        return False
+                    return True
+                
+                # Update processors with timeout
+                print(f"- Updating processors...")
+                processor_updated = update_with_timeout("processor", self.processor_manager)
+                
+                # Update listeners with timeout
+                print(f"- Updating listeners...")
+                listener_updated = update_with_timeout("listener", self.listener_manager)
+                
+                if processor_updated and listener_updated:
+                    print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}Source configuration saved, but service update may be incomplete.{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
+                    
+            except Exception as e:
+                print(f"{Fore.RED}Error starting source: {e}{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}Source configuration saved, but service could not be started.{ColorStyle.RESET_ALL}")
         else:
             print(f"{Fore.RED}Failed to add source: {result['error']}{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")
+        
+        print("\nReturning to main menu...")
+        input("Press Enter to continue...")
+        clear()  # Ensure screen is cleared before returning
+        return  # Return to previous menu
     
     def _manage_sources(self):
         """Manage existing sources."""

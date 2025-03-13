@@ -144,9 +144,6 @@ class CLI:
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
     
-"""
-Focused fix for the add_source method in the CLI class to prevent freezing.
-"""
 
     def _add_source(self):
         """Add a new log source."""

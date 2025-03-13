@@ -772,3 +772,37 @@ class CLI:
                 queue_size = 0
                 if source_id in self.processor_manager.queues:
                     queue_size = self.processor_manager.queues[source_id].qsize()
+
+    def _exit_application(self):
+        """Exit the application cleanly."""
+        print(f"\n{Fore.YELLOW}Are you sure you want to exit?{ColorStyle.RESET_ALL}")
+        confirm = prompt("Exit the application? (y/n): ")
+        
+        if confirm.lower() == 'y':
+            self._clean_exit()
+            print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
+            sys.exit(0)
+        else:
+            print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
+            return
+            
+    def _clean_exit(self):
+        """Clean up resources before exiting."""
+        print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
+        
+        # Stop health check if running
+        if hasattr(self.health_check, 'running') and self.health_check.running:
+            print("- Stopping health check...")
+            self.health_check.stop()
+        
+        # Stop processor manager
+        print("- Stopping processors...")
+        self.processor_manager.stop()
+        
+        # Stop listener manager
+        print("- Stopping listeners...")
+        self.listener_manager.stop()
+        
+        print(f"{Fore.CYAN}All services stopped.{ColorStyle.RESET_ALL}")
+    
+

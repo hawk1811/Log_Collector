@@ -185,12 +185,17 @@ class CLI:
         while True:
             port = prompt("Listener Port [514]: ")
             try:
-                port = int(port)
-                if 1 <= port <= 65535:
+                if not port:  # If user just presses Enter, use 514 as default
+                    port = 514
                     source_data["listener_port"] = port
                     break
                 else:
-                    print(f"{Fore.RED}Port must be between 1 and 65535.{ColorStyle.RESET_ALL}")
+                    port = int(port)
+                    if 1 <= port <= 65535:
+                        source_data["listener_port"] = port
+                        break
+                    else:
+                        print(f"{Fore.RED}Port must be between 1 and 65535.{ColorStyle.RESET_ALL}")
             except ValueError:
                 print(f"{Fore.RED}Invalid port. Please enter a valid number.{ColorStyle.RESET_ALL}")
         
@@ -286,53 +291,25 @@ class CLI:
         if result["success"]:
             print(f"{Fore.GREEN}Source added successfully with ID: {result['source_id']}{ColorStyle.RESET_ALL}")
             
-            # Safely restart listeners and processors with timeout protection
+            # Start newly added source by completely restarting the services
+            print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
+            
             try:
-                print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
+                # Stop all services
+                print(f"- Stopping all services...")
+                self.processor_manager.stop()
+                self.listener_manager.stop()
                 
-                # Use a timeout to prevent freezing
-                import threading
-                import time
+                # Start all services with new configuration
+                print(f"- Starting all services with new configuration...")
+                self.processor_manager.start()
+                self.listener_manager.start()
                 
-                def update_with_timeout(manager_name, manager, timeout=5):
-                    """Update manager with timeout protection."""
-                    def update_task():
-                        try:
-                            if manager_name == "processor":
-                                manager.update_processors()
-                            elif manager_name == "listener":
-                                manager.update_listeners()
-                        except Exception as e:
-                            print(f"{Fore.RED}Error updating {manager_name}: {e}{ColorStyle.RESET_ALL}")
-                    
-                    update_thread = threading.Thread(target=update_task)
-                    update_thread.daemon = True  # Set as daemon so it doesn't block program exit
-                    update_thread.start()
-                    update_thread.join(timeout)  # Wait with timeout
-                    
-                    if update_thread.is_alive():
-                        print(f"{Fore.YELLOW}Warning: {manager_name} update is taking longer than expected.{ColorStyle.RESET_ALL}")
-                        print(f"{Fore.YELLOW}Continuing without waiting to avoid freezing.{ColorStyle.RESET_ALL}")
-                        return False
-                    return True
-                
-                # Update processors with timeout
-                print(f"- Updating processors...")
-                processor_updated = update_with_timeout("processor", self.processor_manager)
-                
-                # Update listeners with timeout
-                print(f"- Updating listeners...")
-                listener_updated = update_with_timeout("listener", self.listener_manager)
-                
-                if processor_updated and listener_updated:
-                    print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
-                else:
-                    print(f"{Fore.YELLOW}Source configuration saved, but service update may be incomplete.{ColorStyle.RESET_ALL}")
-                    print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
-                    
+                print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
             except Exception as e:
-                print(f"{Fore.RED}Error starting source: {e}{ColorStyle.RESET_ALL}")
+                print(f"{Fore.RED}Error starting services: {e}{ColorStyle.RESET_ALL}")
                 print(f"{Fore.YELLOW}Source configuration saved, but service could not be started.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
         else:
             print(f"{Fore.RED}Failed to add source: {result['error']}{ColorStyle.RESET_ALL}")
         

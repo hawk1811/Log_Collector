@@ -183,7 +183,7 @@ class CLI:
         
         # Get listener port
         while True:
-            port = prompt("Listener Port: ")
+            port = prompt("Listener Port [514]: ")
             try:
                 port = int(port)
                 if 1 <= port <= 65535:
@@ -195,7 +195,7 @@ class CLI:
                 print(f"{Fore.RED}Invalid port. Please enter a valid number.{ColorStyle.RESET_ALL}")
         
         # Get protocol - simplified to accept single letter with UDP as default
-        protocol = prompt("Protocol (u/t) [u for UDP, t for TCP]: ")
+        protocol = prompt("Protocol (u-UDP, t-TCP) [UDP]: ")
         if protocol.lower() == 't':
             source_data["protocol"] = "TCP"
         else:
@@ -204,7 +204,7 @@ class CLI:
         
         # Get target type - simplified to accept single letter
         while True:
-            target_type = prompt("Target Type (f/h) [f for Folder, h for HEC]: ")
+            target_type = prompt("Target Type (f-Folder, h-HEC): ")
             if target_type.lower() == 'f':
                 source_data["target_type"] = "FOLDER"
                 break

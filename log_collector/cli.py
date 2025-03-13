@@ -52,22 +52,55 @@ class CLI:
         clear()
         self._print_header()
         
+        # Setup signal handler for clean exits
+        import signal
+        
+        def signal_handler(sig, frame):
+            print("\n\n")
+            print(f"{Fore.YELLOW}Ctrl+C detected. Do you want to exit?{ColorStyle.RESET_ALL}")
+            try:
+                confirm = prompt("Exit the application? (y/n): ")
+                if confirm.lower() == 'y':
+                    print(f"{Fore.CYAN}Cleaning up resources...{ColorStyle.RESET_ALL}")
+                    self._clean_exit()
+                    print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
+                    sys.exit(0)
+                else:
+                    print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
+                    return
+            except KeyboardInterrupt:
+                # If Ctrl+C is pressed during the prompt, exit immediately
+                print(f"\n{Fore.CYAN}Forced exit. Cleaning up resources...{ColorStyle.RESET_ALL}")
+                self._clean_exit()
+                print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
+                sys.exit(0)
+        
+        # Register the signal handler for SIGINT (Ctrl+C)
+        signal.signal(signal.SIGINT, signal_handler)
+        
         # Start component threads if there are already sources configured
         sources = self.source_manager.get_sources()
         if sources:
             self.processor_manager.start()
             self.listener_manager.start()
-            print(f"{Fore.GREEN}Started with {len(sources)} configured sources{ColorStyle.RESET_ALL}")
+            print(f"{Fore.GREEN}Started with {len(sources)} configured sources.{ColorStyle.RESET_ALL}")
         
-        # Check for health check config
-        # TODO: Load health check config from a file
+        # Automatically start health check if configured
+        if hasattr(self.health_check, 'config') and self.health_check.config is not None:
+            if self.health_check.start():
+                print(f"{Fore.GREEN}Health check monitoring started automatically.{ColorStyle.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}Health check is configured but failed to start.{ColorStyle.RESET_ALL}")
+        
+        print("\nPress Enter to continue to main menu...")
+        input()
         
         while True:
             try:
                 self._show_main_menu()
             except KeyboardInterrupt:
-                print("\nExiting...")
-                break
+                # This should not be reached due to the signal handler, but just in case
+                signal_handler(signal.SIGINT, None)
             except Exception as e:
                 print(f"{Fore.RED}Error: {e}{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
@@ -82,7 +115,7 @@ class CLI:
     
     def _show_main_menu(self):
         """Display main menu and handle commands."""
-        clear()
+        clear()  # Ensure screen is cleared
         self._print_header()
         print("\nMain Menu:")
         print("1. Add New Source")
@@ -105,8 +138,9 @@ class CLI:
         elif choice == "4":
             self._view_status()
         elif choice == "5":
-            print("Exiting...")
-            sys.exit(0)
+            self._exit_application()
+            # If we return here, it means the user canceled the exit
+            return
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
     
@@ -159,8 +193,8 @@ class CLI:
             except ValueError:
                 print(f"{Fore.RED}Invalid port. Please enter a valid number.{ColorStyle.RESET_ALL}")
         
-        # Get protocol - simplified to accept single letter
-        protocol = prompt("Protocol (u/t) [u for UDP, t for TCP]: ")
+        # Get protocol - simplified to accept single letter with UDP as default
+        protocol = prompt("Protocol (u-UDP, t-TCP) [UDP]: ")
         if protocol.lower() == 't':
             source_data["protocol"] = "TCP"
         else:
@@ -252,10 +286,15 @@ class CLI:
             print(f"{Fore.GREEN}Source added successfully with ID: {result['source_id']}{ColorStyle.RESET_ALL}")
             
             # Restart listeners and processors to apply changes
+            print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
             self.processor_manager.update_processors()
             self.listener_manager.update_listeners()
+            print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
             
+            print("\nReturning to main menu...")
             input("Press Enter to continue...")
+            clear()  # Ensure screen is cleared before returning
+            return  # Return to previous menu after successful addition
         else:
             print(f"{Fore.RED}Failed to add source: {result['error']}{ColorStyle.RESET_ALL}")
             input("Press Enter to continue...")
@@ -566,6 +605,7 @@ class CLI:
             
             if choice == "1":
                 self._update_health_check()
+                return  # Return after update to prevent menu stacking
             elif choice == "2":
                 if is_running:
                     self.health_check.stop()
@@ -576,11 +616,16 @@ class CLI:
                     else:
                         print(f"{Fore.RED}Failed to start health check monitoring.{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
+                clear()  # Clear screen when returning
+                return
             elif choice == "3":
+                clear()  # Clear screen when returning
                 return
             else:
                 print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
+                self._configure_health_check()  # Recursive call to show the menu again
+                return
         else:
             print("Health check is not configured.")
             print("\nOptions:")
@@ -594,11 +639,15 @@ class CLI:
             
             if choice == "1":
                 self._update_health_check()
+                return  # Return after update to prevent menu stacking
             elif choice == "2":
+                clear()  # Clear screen when returning
                 return
             else:
                 print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
+                self._configure_health_check()  # Recursive call to show the menu again
+                return
     
     def _update_health_check(self):
         """Update health check configuration."""
@@ -655,17 +704,22 @@ class CLI:
         if self.health_check.configure(hec_url, hec_token, interval):
             print(f"{Fore.GREEN}Health check configured successfully.{ColorStyle.RESET_ALL}")
             
-            # Ask to start health check
-            start = prompt("Start health check monitoring now? (y/n): ")
-            if start.lower() == 'y':
-                if self.health_check.start():
-                    print(f"{Fore.GREEN}Health check monitoring started.{ColorStyle.RESET_ALL}")
-                else:
-                    print(f"{Fore.RED}Failed to start health check monitoring.{ColorStyle.RESET_ALL}")
+            # Auto-start health check
+            if self.health_check.start():
+                print(f"{Fore.GREEN}Health check monitoring started automatically.{ColorStyle.RESET_ALL}")
+            else:
+                print(f"{Fore.RED}Failed to start health check monitoring.{ColorStyle.RESET_ALL}")
+                
+            print("\nReturning to main menu...")
+            input("Press Enter to continue...")
+            clear()  # Ensure screen is cleared before returning
+            return  # Return to previous menu after successful configuration
         else:
             print(f"{Fore.RED}Failed to configure health check.{ColorStyle.RESET_ALL}")
         
         input("Press Enter to continue...")
+        clear()  # Clear screen when returning
+        return
     
     def _view_status(self):
         """View system and sources status."""

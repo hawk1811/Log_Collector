@@ -6,10 +6,7 @@ import os
 import re
 import sys
 import time
-import threading
-import signal
 from pathlib import Path
-from datetime import datetime
 
 from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import clear
@@ -20,14 +17,6 @@ from colorama import init, Fore, Style as ColorStyle
 # Initialize colorama for cross-platform colored terminal output
 init()
 
-# Try to import curses, but provide fallback for Windows
-try:
-    import curses
-    CURSES_AVAILABLE = True
-except ImportError:
-    CURSES_AVAILABLE = False
-
-import psutil
 from log_collector.config import (
     logger,
     DEFAULT_UDP_PROTOCOL,
@@ -35,7 +24,6 @@ from log_collector.config import (
     DEFAULT_FOLDER_BATCH_SIZE,
     DEFAULT_HEALTH_CHECK_INTERVAL,
 )
-from log_collector.auth import AuthManager
 
 class CLI:
     """Command Line Interface for Log Collector."""
@@ -53,143 +41,20 @@ class CLI:
         self.processor_manager = processor_manager
         self.listener_manager = listener_manager
         self.health_check = health_check
-        self.auth_manager = AuthManager()
         
         # Define prompt style
         self.prompt_style = Style.from_dict({
             'prompt': 'ansicyan bold',
         })
-        
-        # Flag to track if user is authenticated
-        self.is_authenticated = False
-        self.current_user = None
-        
-        # For live status display
-        self.status_running = False
-        self.status_thread = None
-    
-    def _authenticate_user(self):
-        """Authenticate user before allowing access to the application."""
-        max_attempts = 3
-        attempt = 0
-        
-        while attempt < max_attempts:
-            print(f"{Fore.CYAN}=== Authentication Required ==={ColorStyle.RESET_ALL}")
-            print(f"Please log in to continue. Default credentials: admin/password")
-            print(f"Note: You will be required to change the default password after first login.")
-            
-            username = prompt("Username: ")
-            password = prompt("Password: ", is_password=True)
-            
-            success, message, force_change = self.auth_manager.authenticate(username, password)
-            
-            if success:
-                self.is_authenticated = True
-                self.current_user = username
-                print(f"{Fore.GREEN}{message}{ColorStyle.RESET_ALL}")
-                
-                # If password change is required
-                if force_change:
-                    print(f"{Fore.YELLOW}You must change your password before continuing.{ColorStyle.RESET_ALL}")
-                    if not self._change_password(force_change=True):
-                        # If password change failed, authentication fails
-                        return False
-                
-                return True
-            else:
-                print(f"{Fore.RED}{message}{ColorStyle.RESET_ALL}")
-                attempt += 1
-                
-                if attempt < max_attempts:
-                    print(f"{Fore.YELLOW}Attempts remaining: {max_attempts - attempt}{ColorStyle.RESET_ALL}")
-                    time.sleep(1)
-        
-        print(f"{Fore.RED}Maximum authentication attempts exceeded.{ColorStyle.RESET_ALL}")
-        return False
-    
-    def _change_password(self, force_change=False):
-        """Change user password.
-        
-        Args:
-            force_change: If True, user cannot cancel the operation
-            
-        Returns:
-            bool: True if password was changed successfully
-        """
-        if not self.is_authenticated:
-            print(f"{Fore.RED}You must be logged in to change password.{ColorStyle.RESET_ALL}")
-            return False
-        
-        clear()
-        self._print_header()
-        print(f"{Fore.CYAN}=== Change Password ==={ColorStyle.RESET_ALL}")
-        print("Password requirements:")
-        print("- At least 12 characters long")
-        print("- At least one uppercase letter")
-        print("- At least one digit")
-        print("- At least one special character")
-        
-        # Get current password
-        old_password = prompt("Current Password: ", is_password=True)
-        
-        # Get new password
-        while True:
-            new_password = prompt("New Password: ", is_password=True)
-            confirm_password = prompt("Confirm New Password: ", is_password=True)
-            
-            if new_password != confirm_password:
-                print(f"{Fore.RED}Passwords do not match. Please try again.{ColorStyle.RESET_ALL}")
-                continue
-            
-            # If user can cancel and enters empty password
-            if not force_change and not new_password:
-                print(f"{Fore.YELLOW}Password change cancelled.{ColorStyle.RESET_ALL}")
-                return False
-            
-            # If password change is forced, don't allow empty password
-            if force_change and not new_password:
-                print(f"{Fore.RED}Password cannot be empty. You must change your password.{ColorStyle.RESET_ALL}")
-                continue
-            
-            # Change password
-            success, message = self.auth_manager.change_password(
-                self.current_user, old_password, new_password
-            )
-            
-            if success:
-                print(f"{Fore.GREEN}{message}{ColorStyle.RESET_ALL}")
-                return True
-            else:
-                print(f"{Fore.RED}{message}{ColorStyle.RESET_ALL}")
-                
-                if "Invalid username or password" in message:
-                    # If current password is wrong, give option to try again or cancel
-                    if not force_change:
-                        retry = prompt("Would you like to try again? (y/n): ")
-                        if retry.lower() != 'y':
-                            return False
-                        old_password = prompt("Current Password: ", is_password=True)
-                    else:
-                        # If forced, must try again
-                        old_password = prompt("Current Password: ", is_password=True)
-                else:
-                    # Other issues like password complexity
-                    if not force_change:
-                        retry = prompt("Would you like to try again? (y/n): ")
-                        if retry.lower() != 'y':
-                            return False
     
     def start(self):
         """Start CLI interface."""
         clear()
         self._print_header()
         
-        # Authenticate user before proceeding
-        if not self._authenticate_user():
-            print(f"{Fore.RED}Authentication failed. Exiting...{ColorStyle.RESET_ALL}")
-            sys.exit(1)
-        
         # Setup signal handler for clean exits
+        import signal
+        
         def signal_handler(sig, frame):
             print("\n\n")
             print(f"{Fore.YELLOW}Ctrl+C detected. Do you want to exit?{ColorStyle.RESET_ALL}")
@@ -252,17 +117,15 @@ class CLI:
         """Display main menu and handle commands."""
         clear()  # Ensure screen is cleared
         self._print_header()
-        print(f"\nLogged in as: {Fore.GREEN}{self.current_user}{ColorStyle.RESET_ALL}")
         print("\nMain Menu:")
         print("1. Add New Source")
         print("2. Manage Sources")
         print("3. Health Check Configuration")
-        print("4. View Live Status")
-        print("5. Change Password")
-        print("6. Exit")
+        print("4. View Status")
+        print("5. Exit")
         
         choice = prompt(
-            HTML("<ansicyan>Choose an option (1-6): </ansicyan>"),
+            HTML("<ansicyan>Choose an option (1-5): </ansicyan>"),
             style=self.prompt_style
         )
         
@@ -273,16 +136,15 @@ class CLI:
         elif choice == "3":
             self._configure_health_check()
         elif choice == "4":
-            self._view_live_status()
+            self._view_status()
         elif choice == "5":
-            self._change_password()
-        elif choice == "6":
             self._exit_application()
             # If we return here, it means the user canceled the exit
             return
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
     
+
     def _add_source(self):
         """Add a new log source."""
         clear()
@@ -837,7 +699,7 @@ class CLI:
                 input("Press Enter to continue...")
                 self._configure_health_check()  # Recursive call to show the menu again
                 return
-                
+    
     def _update_health_check(self):
         """Update health check configuration."""
         clear()
@@ -917,347 +779,74 @@ class CLI:
         input("Press Enter to continue...")
         clear()  # Clear screen when returning
         return
-           
-    def _view_live_status(self):
-        """View system and sources status with live updates."""
-        # Use curses-based display if available, otherwise use simple console-based display
-        if CURSES_AVAILABLE:
-            self._view_live_status_curses()
-        else:
-            self._view_live_status_simple()
     
-    def _view_live_status_simple(self):
-        """Simple live status display for Windows systems without curses."""
-        self.status_running = True
+    def _view_status(self):
+        """View system and sources status."""
+        clear()
+        self._print_header()
+        print(f"{Fore.CYAN}=== System Status ==={ColorStyle.RESET_ALL}")
         
-        # Store stats for each source
-        source_stats = {}
+        # System information
+        import psutil
+        import threading
         
-        print(f"{Fore.CYAN}=== LIVE STATUS DISPLAY ==={ColorStyle.RESET_ALL}")
-        print("Press Ctrl+C to return to the main menu.")
-        print("")
+        # CPU and memory
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
         
-        try:
-            while self.status_running:
-                # Clear screen (Windows-compatible)
-                os.system('cls' if os.name == 'nt' else 'clear')
-                
-                # Print title and current time
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"{Fore.CYAN}=== LOG COLLECTOR - LIVE STATUS ==={ColorStyle.RESET_ALL}")
-                print(f"Time: {current_time}")
-                print("Press Ctrl+C to return to the main menu.")
-                print("")
-                
-                # System information
-                cpu_percent = psutil.cpu_percent(interval=0.1)
-                memory = psutil.virtual_memory()
-                disk = psutil.disk_usage('/')
-                
-                print(f"{Fore.CYAN}SYSTEM RESOURCES:{ColorStyle.RESET_ALL}")
-                
-                # CPU with color
-                cpu_color = Fore.GREEN if cpu_percent < 70 else (Fore.YELLOW if cpu_percent < 90 else Fore.RED)
-                print(f"  CPU Usage: {cpu_color}{cpu_percent}%{ColorStyle.RESET_ALL}")
-                
-                # Memory with color
-                mem_color = Fore.GREEN if memory.percent < 70 else (Fore.YELLOW if memory.percent < 90 else Fore.RED)
-                print(f"  Memory: {mem_color}{memory.percent}%{ColorStyle.RESET_ALL} ({memory.used // (1024**2)} MB / {memory.total // (1024**2)} MB)")
-                
-                # Disk with color
-                disk_color = Fore.GREEN if disk.percent < 70 else (Fore.YELLOW if disk.percent < 90 else Fore.RED)
-                print(f"  Disk: {disk_color}{disk.percent}%{ColorStyle.RESET_ALL} ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)")
-                
-                thread_count = threading.active_count()
-                print(f"  Active Threads: {thread_count}")
-                print("")
-                
-                # Health check status
-                print(f"{Fore.CYAN}HEALTH CHECK:{ColorStyle.RESET_ALL}")
-                is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
-                is_running = is_configured and self.health_check.running
-                
-                if is_configured:
-                    hc_color = Fore.GREEN if is_running else Fore.RED
-                    print(f"  Status: {hc_color}{'Running' if is_running else 'Stopped'}{ColorStyle.RESET_ALL}")
-                    
-                    if is_running:
-                        interval = self.health_check.config['interval']
-                        print(f"  Interval: {interval} seconds")
-                else:
-                    print(f"  {Fore.YELLOW}Not Configured{ColorStyle.RESET_ALL}")
-                
-                print("")
-                
-                # Sources information
-                sources = self.source_manager.get_sources()
-                
-                if sources:
-                    print(f"{Fore.CYAN}SOURCES STATUS:{ColorStyle.RESET_ALL}")
-                    print(f"  {'ID':<36} {'NAME':<15} {'TARGET':<8} {'QUEUE':<8} {'THREADS':<8} {'TOTAL LOGS':<12} {'STATUS':<8}")
-                    print(f"  {'-' * 95}")
-                    
-                    for source_id, source in sources.items():
-                        # Initialize stats if not exist
-                        if source_id not in source_stats:
-                            source_stats[source_id] = {"processed_logs": 0}
-                        
-                        # Get current stats
-                        stats = self.processor_manager.get_source_stats(source_id)
-                        
-                        # Update our stored stats if newer
-                        if stats["processed_logs"] > source_stats[source_id]["processed_logs"]:
-                            source_stats[source_id] = stats
-                        
-                        # Get display values
-                        name = source["source_name"][:15]
-                        target_type = source["target_type"][:8]
-                        queue_size = stats["queue_size"]
-                        active_processors = stats["active_processors"]
-                        processed_logs = stats["processed_logs"]
-                        
-                        # Check if listener is active
-                        listener_port = source["listener_port"]
-                        listener_protocol = source["protocol"]
-                        listener_key = f"{listener_protocol}:{listener_port}"
-                        listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
-                        
-                        # Set status and color
-                        if listener_active and active_processors > 0:
-                            status = "ACTIVE"
-                            status_color = Fore.GREEN
-                        elif listener_active:
-                            status = "PARTIAL"
-                            status_color = Fore.YELLOW
-                        else:
-                            status = "INACTIVE"
-                            status_color = Fore.RED
-                        
-                        # Queue size color
-                        queue_color = Fore.GREEN if queue_size < 1000 else (Fore.YELLOW if queue_size < 5000 else Fore.RED)
-                        
-                        # Format the row
-                        print(f"  {source_id:<36} {name:<15} {target_type:<8} {queue_color}{queue_size:<8}{ColorStyle.RESET_ALL} {active_processors:<8} {processed_logs:<12} {status_color}{status:<8}{ColorStyle.RESET_ALL}")
-                else:
-                    print(f"{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
-                
-                # Sleep briefly before next update
-                time.sleep(1)
-                
-        except KeyboardInterrupt:
-            # User pressed Ctrl+C to exit
-            self.status_running = False
-            # Clear screen before returning to menu
-            os.system('cls' if os.name == 'nt' else 'clear')
-
-    def _view_live_status_curses(self):
-        """View live system and sources status using curses for Unix systems."""
-        try:
-            # Initialize curses
-            stdscr = curses.initscr()
-            curses.start_color()
-            curses.use_default_colors()
-            curses.curs_set(0)  # Hide cursor
-            curses.noecho()
-            curses.cbreak()
-            stdscr.keypad(True)
-            stdscr.timeout(500)  # Set getch timeout to 500ms
-            
-            # Define color pairs
-            curses.init_pair(1, curses.COLOR_GREEN, -1)  # Green text
-            curses.init_pair(2, curses.COLOR_RED, -1)    # Red text
-            curses.init_pair(3, curses.COLOR_CYAN, -1)   # Cyan text
-            curses.init_pair(4, curses.COLOR_YELLOW, -1) # Yellow text
-            
-            # Colors
-            GREEN = curses.color_pair(1)
-            RED = curses.color_pair(2)
-            CYAN = curses.color_pair(3)
-            YELLOW = curses.color_pair(4)
-            NORMAL = curses.A_NORMAL
-            BOLD = curses.A_BOLD
-            
-            # Start live update
-            self.status_running = True
-            max_y, max_x = stdscr.getmaxyx()
-            
-            # Store stats for each source
-            source_stats = {}
-            
-            while self.status_running:
-                try:
-                    # Clear screen
-                    stdscr.clear()
-                    
-                    # Update max size in case terminal was resized
-                    max_y, max_x = stdscr.getmaxyx()
-                    
-                    # Get current time
-                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    # Print header
-                    stdscr.addstr(0, 0, "LOG COLLECTOR - LIVE STATUS", CYAN | BOLD)
-                    stdscr.addstr(0, max_x - len(current_time) - 1, current_time)
-                    stdscr.addstr(1, 0, "Press any key to return to main menu.")
-                    
-                    # System information
-                    cpu_percent = psutil.cpu_percent(interval=0.1)
-                    memory = psutil.virtual_memory()
-                    disk = psutil.disk_usage('/')
-                    
-                    # Print system info
-                    row = 3
-                    stdscr.addstr(row, 0, "SYSTEM RESOURCES:", CYAN | BOLD)
-                    row += 1
-                    
-                    cpu_str = f"CPU Usage: {cpu_percent}%"
-                    cpu_color = GREEN if cpu_percent < 70 else (YELLOW if cpu_percent < 90 else RED)
-                    stdscr.addstr(row, 2, cpu_str, cpu_color)
-                    row += 1
-                    
-                    mem_str = f"Memory: {memory.percent}% ({memory.used // (1024**2)} MB / {memory.total // (1024**2)} MB)"
-                    mem_color = GREEN if memory.percent < 70 else (YELLOW if memory.percent < 90 else RED)
-                    stdscr.addstr(row, 2, mem_str, mem_color)
-                    row += 1
-                    
-                    disk_str = f"Disk: {disk.percent}% ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)"
-                    disk_color = GREEN if disk.percent < 70 else (YELLOW if disk.percent < 90 else RED)
-                    stdscr.addstr(row, 2, disk_str, disk_color)
-                    row += 1
-                    
-                    thread_count = threading.active_count()
-                    stdscr.addstr(row, 2, f"Active Threads: {thread_count}")
-                    row += 2
-                    
-                    # Health check status
-                    stdscr.addstr(row, 0, "HEALTH CHECK:", CYAN | BOLD)
-                    row += 1
-                    
-                    is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
-                    is_running = is_configured and self.health_check.running
-                    
-                    if is_configured:
-                        hc_str = f"Status: {'Running' if is_running else 'Stopped'}"
-                        hc_color = GREEN if is_running else RED
-                        stdscr.addstr(row, 2, hc_str, hc_color)
-                        row += 1
-                        
-                        if is_running:
-                            interval = self.health_check.config['interval']
-                            stdscr.addstr(row, 2, f"Interval: {interval} seconds")
-                            row += 1
-                    else:
-                        stdscr.addstr(row, 2, "Not Configured", YELLOW)
-                        row += 1
-                    
-                    # Sources information
-                    row += 1
-                    sources = self.source_manager.get_sources()
-                    
-                    if sources:
-                        stdscr.addstr(row, 0, "SOURCES STATUS:", CYAN | BOLD)
-                        row += 1
-                        
-                        # Table header
-                        header_format = f"{'ID':<8} {'NAME':<15} {'TARGET':<8} {'QUEUE':<8} {'THREADS':<8} {'TOTAL LOGS':<12} {'STATUS':<8}"
-                        stdscr.addstr(row, 2, header_format, BOLD)
-                        row += 1
-                        stdscr.addstr(row, 2, "-" * (len(header_format)))
-                        row += 1
-                        
-                        # Get stats for each source
-                        for source_id, source in sources.items():
-                            # Initialize stats if not exist
-                            if source_id not in source_stats:
-                                source_stats[source_id] = {"processed_logs": 0}
-                            
-                            # Get current stats
-                            stats = self.processor_manager.get_source_stats(source_id)
-                            
-                            # Update our stored stats if newer
-                            if stats["processed_logs"] > source_stats[source_id]["processed_logs"]:
-                                source_stats[source_id] = stats
-                            
-                            # Get display values
-                            name = source["source_name"][:15]  # Truncate if too long
-                            target_type = source["target_type"][:8]
-                            queue_size = stats["queue_size"]
-                            active_processors = stats["active_processors"]
-                            processed_logs = stats["processed_logs"]
-                            
-                            # Check if listener is active
-                            listener_port = source["listener_port"]
-                            listener_protocol = source["protocol"]
-                            listener_key = f"{listener_protocol}:{listener_port}"
-                            listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
-                            
-                            # Set status and color
-                            if listener_active and active_processors > 0:
-                                status = "ACTIVE"
-                                status_color = GREEN
-                            elif listener_active:
-                                status = "PARTIAL"
-                                status_color = YELLOW
-                            else:
-                                status = "INACTIVE"
-                                status_color = RED
-                            
-                            # Queue size color
-                            queue_color = GREEN if queue_size < 1000 else (YELLOW if queue_size < 5000 else RED)
-                            
-                            # Print source row
-                            id_short = source_id[:7]  # Truncate ID to first 7 chars
-                            
-                            # Format the row
-                            stdscr.addstr(row, 2, f"{id_short:<8}", NORMAL)
-                            stdscr.addstr(f"{name:<15}", NORMAL)
-                            stdscr.addstr(f"{target_type:<8}", NORMAL)
-                            stdscr.addstr(f"{queue_size:<8}", queue_color)
-                            stdscr.addstr(f"{active_processors:<8}", NORMAL)
-                            stdscr.addstr(f"{processed_logs:<12}", NORMAL)
-                            stdscr.addstr(f"{status:<8}", status_color)
-                            
-                            row += 1
-                            
-                            # Check if we're running out of screen space
-                            if row >= max_y - 2:
-                                stdscr.addstr(row, 2, "... more sources not shown (screen too small) ...", YELLOW)
-                                break
-                    else:
-                        stdscr.addstr(row, 2, "No sources configured.", YELLOW)
-                    
-                    # Refresh the screen
-                    stdscr.refresh()
-                    
-                    # Check for key press
-                    key = stdscr.getch()
-                    if key != -1:  # Any key pressed
-                        self.status_running = False
-                        break
-                    
-                    # Sleep briefly before next update
-                    time.sleep(0.5)
-                    
-                except Exception as e:
-                    # Log error but continue
-                    logger.error(f"Error in live status display: {e}")
-                    time.sleep(1)
+        print(f"\nSystem Resources:")
+        print(f"CPU Usage: {cpu_percent}%")
+        print(f"Memory Usage: {memory.percent}% ({memory.used / (1024**3):.2f} GB / {memory.total / (1024**3):.2f} GB)")
         
-        except Exception as e:
-            # Log the error
-            logger.error(f"Error initializing curses: {e}")
+        # Thread information
+        thread_count = threading.active_count()
+        print(f"Active Threads: {thread_count}")
         
-        finally:
-            # Clean up curses
-            if 'stdscr' in locals():
-                stdscr.keypad(False)
-            curses.nocbreak()
-            curses.echo()
-            curses.endwin()
-            self.status_running = False
-            
-            # Give terminal a moment to reset
-            time.sleep(0.5)
+        # Sources information
+        sources = self.source_manager.get_sources()
+        
+        if sources:
+            print(f"\n{Fore.CYAN}Active Sources:{ColorStyle.RESET_ALL}")
+            for source_id, source in sources.items():
+                # Get queue size if available
+                queue_size = 0
+                if source_id in self.processor_manager.queues:
+                    queue_size = self.processor_manager.queues[source_id].qsize()
+                
+                # Count active processors
+                active_processors = sum(1 for p_id, p_thread in self.processor_manager.processors.items()
+                                      if p_id.startswith(f"{source_id}:") and p_thread.is_alive())
+                
+                # Check if listener is active
+                listener_port = source["listener_port"]
+                listener_protocol = source["protocol"]
+                listener_key = f"{listener_protocol}:{listener_port}"
+                listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
+                
+                print(f"\nSource: {source['source_name']}")
+                print(f"  - IP: {source['source_ip']}")
+                print(f"  - Port: {source['listener_port']} ({source['protocol']})")
+                print(f"  - Target: {source['target_type']}")
+                print(f"  - Queue Size: {queue_size}")
+                print(f"  - Active Processors: {active_processors}")
+                print(f"  - Listener Active: {listener_active}")
+        else:
+            print(f"\n{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
+        
+        # Health check status
+        print(f"\n{Fore.CYAN}Health Check Status:{ColorStyle.RESET_ALL}")
+        is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
+        is_running = is_configured and self.health_check.running
+        
+        if is_configured:
+            print(f"  - Configured: Yes")
+            print(f"  - Status: {'Running' if is_running else 'Stopped'}")
+            print(f"  - Interval: {self.health_check.config['interval']} seconds")
+        else:
+            print(f"  - Configured: No")
+        
+        print(f"\n{Fore.CYAN}Press Enter to return to the main menu...{ColorStyle.RESET_ALL}")
+        input()  # Wait for user input before returning to main menu
 
     def _exit_application(self):
         """Exit the application cleanly."""
@@ -1271,16 +860,10 @@ class CLI:
         else:
             print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
             return
-    
+            
     def _clean_exit(self):
         """Clean up resources before exiting."""
         print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
-        
-        # Stop status display if running
-        if self.status_running:
-            self.status_running = False
-            if self.status_thread and self.status_thread.is_alive():
-                self.status_thread.join(timeout=2)
         
         # Stop health check if running
         if hasattr(self.health_check, 'running') and self.health_check.running:
@@ -1296,3 +879,5 @@ class CLI:
         self.listener_manager.stop()
         
         print(f"{Fore.CYAN}All services stopped.{ColorStyle.RESET_ALL}")
+    
+

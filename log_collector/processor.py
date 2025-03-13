@@ -30,9 +30,6 @@ class ProcessorManager:
         self.processors = {}  # source_id -> processor thread mapping
         self.running = False
         self.lock = threading.Lock()
-        
-        # Add stats tracking
-        self.stats = {}  # source_id -> stats mapping
     
     def start(self):
         """Start all processor threads."""
@@ -41,11 +38,6 @@ class ProcessorManager:
         sources = self.source_manager.get_sources()
         for source_id in sources:
             self._ensure_processor(source_id)
-            # Initialize stats for this source
-            self.stats[source_id] = {
-                "processed_logs": 0,
-                "last_batch_time": time.time()
-            }
         
         logger.info(f"Started processor threads for {len(sources)} sources")
     
@@ -58,41 +50,8 @@ class ProcessorManager:
             processor_thread.join(timeout=5)
         
         self.processors = {}
-        
-        # Process any remaining logs in queues before clearing them
-        self._process_remaining_logs()
-        
         self.queues = {}
         logger.info("All processor threads stopped")
-    
-    def _process_remaining_logs(self):
-        """Process any remaining logs in queues before shutting down."""
-        for source_id, q in self.queues.items():
-            if q.qsize() > 0:
-                source = self.source_manager.get_source(source_id)
-                if not source:
-                    continue
-                
-                # Collect all remaining logs
-                batch = []
-                try:
-                    while True:
-                        log_str = q.get_nowait()
-                        batch.append(log_str)
-                        q.task_done()
-                except queue.Empty:
-                    pass
-                
-                if batch:
-                    # Process and deliver the batch
-                    processed_batch = self._process_batch(batch, source)
-                    
-                    if source["target_type"] == "FOLDER":
-                        self._deliver_to_folder(processed_batch, source)
-                    elif source["target_type"] == "HEC":
-                        self._deliver_to_hec(processed_batch, source)
-                    
-                    logger.info(f"Processed {len(batch)} remaining logs for source {source['source_name']} during shutdown")
     
     def queue_log(self, log_str, source_id):
         """Queue a log for processing.
@@ -156,13 +115,6 @@ class ProcessorManager:
                 )
                 self.processors[processor_id] = thread
                 thread.start()
-            
-            # Initialize stats if needed
-            if source_id not in self.stats:
-                self.stats[source_id] = {
-                    "processed_logs": 0,
-                    "last_batch_time": time.time()
-                }
     
     def _processor_worker(self, processor_id, source_id):
         """Worker thread for processing logs.
@@ -185,17 +137,6 @@ class ProcessorManager:
                 batch_size = int(source.get("batch_size", 
                                            500 if source["target_type"] == "HEC" else 5000))
                 
-                # Get the current time to check for forced processing
-                current_time = time.time()
-                
-                # Check if we need to force processing due to time
-                force_processing = False
-                if source_id in self.stats:
-                    last_batch_time = self.stats[source_id]["last_batch_time"]
-                    # Force processing after 60 seconds since last batch
-                    if current_time - last_batch_time > 60:
-                        force_processing = True
-                
                 # Collect logs into batch
                 batch = []
                 start_time = time.time()
@@ -209,44 +150,19 @@ class ProcessorManager:
                     except queue.Empty:
                         break
                 
-                # If batch is empty and no force processing, wait a bit and try again
-                if not batch and not force_processing:
-                    time.sleep(0.1)
-                    continue
-                
-                # If force processing and queue is not empty, get all available logs
-                if force_processing and not batch:
-                    try:
-                        while True:
-                            log_str = self.queues[source_id].get_nowait()
-                            batch.append(log_str)
-                            self.queues[source_id].task_done()
-                    except queue.Empty:
-                        pass
-                
-                # If we still have no logs, continue
+                # If batch is empty, wait a bit and try again
                 if not batch:
-                    # Update last batch time to prevent continuous forced processing
-                    if force_processing:
-                        with self.lock:
-                            if source_id in self.stats:
-                                self.stats[source_id]["last_batch_time"] = current_time
+                    time.sleep(0.1)
                     continue
                 
                 # Process the batch
                 processed_batch = self._process_batch(batch, source)
                 
                 # Deliver the batch to the target
-                if source["target_type"] == "FOLDER":
+                if source["target_type"] == "Folder":
                     self._deliver_to_folder(processed_batch, source)
                 elif source["target_type"] == "HEC":
                     self._deliver_to_hec(processed_batch, source)
-                
-                # Update stats for this source
-                with self.lock:
-                    if source_id in self.stats:
-                        self.stats[source_id]["processed_logs"] += len(batch)
-                        self.stats[source_id]["last_batch_time"] = current_time
             
             except Exception as e:
                 logger.error(f"Error in processor {processor_id}: {e}")
@@ -388,37 +304,3 @@ class ProcessorManager:
         
         except Exception as e:
             logger.error(f"Error delivering logs to HEC for source {source['source_name']}: {e}")
-    
-    def get_source_stats(self, source_id):
-        """Get statistics for a source.
-        
-        Args:
-            source_id: Source ID
-            
-        Returns:
-            dict: Source statistics
-        """
-        with self.lock:
-            if source_id in self.stats:
-                stats = self.stats[source_id].copy()
-                
-                # Add queue size
-                if source_id in self.queues:
-                    stats["queue_size"] = self.queues[source_id].qsize()
-                else:
-                    stats["queue_size"] = 0
-                
-                # Add active processors count
-                stats["active_processors"] = sum(
-                    1 for p_id, p_thread in self.processors.items()
-                    if p_id.startswith(f"{source_id}:") and p_thread.is_alive()
-                )
-                
-                return stats
-            
-            return {
-                "processed_logs": 0,
-                "queue_size": 0,
-                "active_processors": 0,
-                "last_batch_time": 0
-            }

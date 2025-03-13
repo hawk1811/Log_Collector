@@ -16,6 +16,9 @@ from log_collector.config import (
     DEFAULT_QUEUE_LIMIT,
 )
 
+# Add maximum flush interval (1 minute) in seconds
+MAX_FLUSH_INTERVAL = 60
+
 class ProcessorManager:
     """Manages log processing queues and worker threads."""
     
@@ -124,6 +127,7 @@ class ProcessorManager:
             source_id: Source ID this processor handles
         """
         logger.info(f"Starting processor {processor_id} for source {source_id}")
+        last_flush_time = time.time()  # Track when we last flushed logs
         
         while self.running:
             try:
@@ -140,33 +144,65 @@ class ProcessorManager:
                 # Collect logs into batch
                 batch = []
                 start_time = time.time()
+                current_time = start_time
                 timeout = 0.1  # 100ms timeout for batch collection
                 
-                while len(batch) < batch_size and time.time() - start_time < timeout:
+                # Calculate time since last flush
+                time_since_flush = current_time - last_flush_time
+                
+                # Determine if we should force a flush based on time
+                force_flush = time_since_flush >= MAX_FLUSH_INTERVAL
+                
+                # Shorter timeout if forcing flush (to check queue quickly)
+                if force_flush:
+                    timeout = min(timeout, 0.01)
+                
+                while len(batch) < batch_size and current_time - start_time < timeout:
                     try:
-                        log_str = self.queues[source_id].get(timeout=timeout - (time.time() - start_time))
+                        log_str = self.queues[source_id].get(timeout=timeout - (current_time - start_time))
                         batch.append(log_str)
                         self.queues[source_id].task_done()
                     except queue.Empty:
                         break
+                    current_time = time.time()
                 
-                # If batch is empty, wait a bit and try again
-                if not batch:
-                    time.sleep(0.1)
-                    continue
+                # Process and deliver batch if:
+                # 1. We have logs AND (batch is full OR collection timeout expired)
+                # 2. OR it's time for a forced flush and we have logs
+                if (batch and (len(batch) >= batch_size or current_time - start_time >= timeout)) or (force_flush and batch):
+                    # Process the batch
+                    processed_batch = self._process_batch(batch, source)
+                    
+                    # Deliver the batch to the target
+                    if source["target_type"] == "FOLDER":
+                        self._deliver_to_folder(processed_batch, source)
+                    elif source["target_type"] == "HEC":
+                        self._deliver_to_hec(processed_batch, source)
+                    
+                    # Update last flush time
+                    last_flush_time = time.time()
+                    
+                    # Log forced flush event
+                    if force_flush and len(batch) < batch_size:
+                        logger.info(f"Forced flush for source {source['source_name']} after {time_since_flush:.1f}s with {len(batch)} logs")
+                elif force_flush:
+                    # If we forced a flush but had no logs, still update the flush time
+                    last_flush_time = time.time()
                 
-                # Process the batch
-                processed_batch = self._process_batch(batch, source)
-                
-                # Deliver the batch to the target
-                if source["target_type"] == "Folder":
-                    self._deliver_to_folder(processed_batch, source)
-                elif source["target_type"] == "HEC":
-                    self._deliver_to_hec(processed_batch, source)
+                # If batch is empty and not forcing flush, wait a bit and try again
+                if not batch and not force_flush:
+                    # Sleep for a small amount to prevent tight loop
+                    # Use shorter sleep when approaching flush interval
+                    sleep_time = 0.1
+                    if MAX_FLUSH_INTERVAL - time_since_flush < 1:
+                        sleep_time = 0.01  # Very short sleep when close to flush interval
+                    time.sleep(sleep_time)
             
             except Exception as e:
                 logger.error(f"Error in processor {processor_id}: {e}")
                 time.sleep(1)  # Prevent tight loop on repeated errors
+                # Reset flush timer after error to avoid immediate retries
+                last_flush_time = time.time()
         
         logger.info(f"Processor {processor_id} stopped")
     

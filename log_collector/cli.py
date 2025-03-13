@@ -1,172 +1,4 @@
-def _view_live_status(self):
-        """View system and sources status with live updates."""
-        # Use curses-based display if available, otherwise use simple console-based display
-        if CURSES_AVAILABLE:
-            self._view_live_status_curses()
-        else:
-            self._view_live_status_simple()
-    
-    def _view_live_status_simple(self):
-        """Simple live status display for Windows systems without curses."""
-        self.status_running = True
-        
-        # Store stats for each source
-        source_stats = {}
-        
-        print(f"{Fore.CYAN}=== LIVE STATUS DISPLAY ==={ColorStyle.RESET_ALL}")
-        print("Press Ctrl+C to return to the main menu.")
-        print("")
-        
-        try:
-            while self.status_running:
-                # Clear screen (Windows-compatible)
-                os.system('cls' if os.name == 'nt' else 'clear')
-                
-                # Print title and current time
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"{Fore.CYAN}=== LOG COLLECTOR - LIVE STATUS ==={ColorStyle.RESET_ALL}")
-                print(f"Time: {current_time}")
-                print("Press Ctrl+C to return to the main menu.")
-                print("")
-                
-                # System information
-                cpu_percent = psutil.cpu_percent(interval=0.1)
-                memory = psutil.virtual_memory()
-                disk = psutil.disk_usage('/')
-                
-                print(f"{Fore.CYAN}SYSTEM RESOURCES:{ColorStyle.RESET_ALL}")
-                
-                # CPU with color
-                cpu_color = Fore.GREEN if cpu_percent < 70 else (Fore.YELLOW if cpu_percent < 90 else Fore.RED)
-                print(f"  CPU Usage: {cpu_color}{cpu_percent}%{ColorStyle.RESET_ALL}")
-                
-                # Memory with color
-                mem_color = Fore.GREEN if memory.percent < 70 else (Fore.YELLOW if memory.percent < 90 else Fore.RED)
-                print(f"  Memory: {mem_color}{memory.percent}%{ColorStyle.RESET_ALL} ({memory.used // (1024**2)} MB / {memory.total // (1024**2)} MB)")
-                
-                # Disk with color
-                disk_color = Fore.GREEN if disk.percent < 70 else (Fore.YELLOW if disk.percent < 90 else Fore.RED)
-                print(f"  Disk: {disk_color}{disk.percent}%{ColorStyle.RESET_ALL} ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)")
-                
-                thread_count = threading.active_count()
-                print(f"  Active Threads: {thread_count}")
-                print("")
-                
-                # Health check status
-                print(f"{Fore.CYAN}HEALTH CHECK:{ColorStyle.RESET_ALL}")
-                is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
-                is_running = is_configured and self.health_check.running
-                
-                if is_configured:
-                    hc_color = Fore.GREEN if is_running else Fore.RED
-                    print(f"  Status: {hc_color}{'Running' if is_running else 'Stopped'}{ColorStyle.RESET_ALL}")
-                    
-                    if is_running:
-                        interval = self.health_check.config['interval']
-                        print(f"  Interval: {interval} seconds")
-                else:
-                    print(f"  {Fore.YELLOW}Not Configured{ColorStyle.RESET_ALL}")
-                
-                print("")
-                
-                # Sources information
-                sources = self.source_manager.get_sources()
-                
-                if sources:
-                    print(f"{Fore.CYAN}SOURCES STATUS:{ColorStyle.RESET_ALL}")
-                    print(f"  {'ID':<36} {'NAME':<15} {'TARGET':<8} {'QUEUE':<8} {'THREADS':<8} {'TOTAL LOGS':<12} {'STATUS':<8}")
-                    print(f"  {'-' * 95}")
-                    
-                    for source_id, source in sources.items():
-                        # Initialize stats if not exist
-                        if source_id not in source_stats:
-                            source_stats[source_id] = {"processed_logs": 0}
-                        
-                        # Get current stats
-                        stats = self.processor_manager.get_source_stats(source_id)
-                        
-                        # Update our stored stats if newer
-                        if stats["processed_logs"] > source_stats[source_id]["processed_logs"]:
-                            source_stats[source_id] = stats
-                        
-                        # Get display values
-                        name = source["source_name"][:15]
-                        target_type = source["target_type"][:8]
-                        queue_size = stats["queue_size"]
-                        active_processors = stats["active_processors"]
-                        processed_logs = stats["processed_logs"]
-                        
-                        # Check if listener is active
-                        listener_port = source["listener_port"]
-                        listener_protocol = source["protocol"]
-                        listener_key = f"{listener_protocol}:{listener_port}"
-                        listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
-                        
-                        # Set status and color
-                        if listener_active and active_processors > 0:
-                            status = "ACTIVE"
-                            status_color = Fore.GREEN
-                        elif listener_active:
-                            status = "PARTIAL"
-                            status_color = Fore.YELLOW
-                        else:
-                            status = "INACTIVE"
-                            status_color = Fore.RED
-                        
-                        # Queue size color
-                        queue_color = Fore.GREEN if queue_size < 1000 else (Fore.YELLOW if queue_size < 5000 else Fore.RED)
-                        
-                        # Format the row
-                        print(f"  {source_id:<36} {name:<15} {target_type:<8} {queue_color}{queue_size:<8}{ColorStyle.RESET_ALL} {active_processors:<8} {processed_logs:<12} {status_color}{status:<8}{ColorStyle.RESET_ALL}")
-                else:
-                    print(f"{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
-                
-                # Sleep briefly before next update
-                time.sleep(1)
-                
-        except KeyboardInterrupt:
-            # User pressed Ctrl+C to exit
-            self.status_running = False
-            # Clear screen before returning to menu
-            os.system('cls' if os.name == 'nt' else 'clear')
-    
-    def _exit_application(self):
-        """Exit the application cleanly."""
-        print(f"\n{Fore.YELLOW}Are you sure you want to exit?{ColorStyle.RESET_ALL}")
-        confirm = prompt("Exit the application? (y/n): ")
-        
-        if confirm.lower() == 'y':
-            self._clean_exit()
-            print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
-            sys.exit(0)
-        else:
-            print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
-            return
-    
-    def _clean_exit(self):
-        """Clean up resources before exiting."""
-        print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
-        
-        # Stop status display if running
-        if self.status_running:
-            self.status_running = False
-            if self.status_thread and self.status_thread.is_alive():
-                self.status_thread.join(timeout=2)
-        
-        # Stop health check if running
-        if hasattr(self.health_check, 'running') and self.health_check.running:
-            print("- Stopping health check...")
-            self.health_check.stop()
-        
-        # Stop processor manager
-        print("- Stopping processors...")
-        self.processor_manager.stop()
-        
-        # Stop listener manager
-        print("- Stopping listeners...")
-        self.listener_manager.stop()
-        
-        print(f"{Fore.CYAN}All services stopped.{ColorStyle.RESET_ALL}")"""
+"""
 Command Line Interface module for Log Collector.
 Provides interactive CLI menu for configuration and management.
 """
@@ -175,6 +7,7 @@ import re
 import sys
 import time
 import threading
+import signal
 from pathlib import Path
 from datetime import datetime
 
@@ -182,7 +15,6 @@ from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import clear
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.shortcuts import ProgressBar
 from colorama import init, Fore, Style as ColorStyle
 
 # Initialize colorama for cross-platform colored terminal output
@@ -358,8 +190,6 @@ class CLI:
             sys.exit(1)
         
         # Setup signal handler for clean exits
-        import signal
-        
         def signal_handler(sig, frame):
             print("\n\n")
             print(f"{Fore.YELLOW}Ctrl+C detected. Do you want to exit?{ColorStyle.RESET_ALL}")
@@ -892,7 +722,122 @@ class CLI:
         
         input("Press Enter to continue...")
     
-    def _update_health_check(self):
+    def _delete_source(self, source_id):
+        """Delete a source."""
+        source = self.source_manager.get_source(source_id)
+        if not source:
+            print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
+            input("Press Enter to continue...")
+            return
+        
+        confirm = prompt(f"Are you sure you want to delete source '{source['source_name']}'? (y/n): ")
+        if confirm.lower() != 'y':
+            print("Deletion cancelled.")
+            input("Press Enter to continue...")
+            return
+        
+        result = self.source_manager.delete_source(source_id)
+        if result["success"]:
+            print(f"{Fore.GREEN}Source deleted successfully.{ColorStyle.RESET_ALL}")
+            
+            # Restart services using the same approach as in _add_source
+            print(f"\n{Fore.CYAN}Applying changes...{ColorStyle.RESET_ALL}")
+            
+            try:
+                # Stop all services
+                print(f"- Stopping all services...")
+                self.processor_manager.stop()
+                self.listener_manager.stop()
+                
+                # Start all services with new configuration
+                print(f"- Starting all services with new configuration...")
+                self.processor_manager.start()
+                self.listener_manager.start()
+                
+                print(f"{Fore.GREEN}Changes applied successfully.{ColorStyle.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.RED}Error applying changes: {e}{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}Source deleted, but service update may be incomplete.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}Failed to delete source: {result['error']}{ColorStyle.RESET_ALL}")
+        
+        input("Press Enter to continue...")
+    
+    def _configure_health_check(self):
+        """Configure health check monitoring."""
+        clear()
+        self._print_header()
+        print(f"{Fore.CYAN}=== Health Check Configuration ==={ColorStyle.RESET_ALL}")
+        
+        # Check if health check is already configured
+        is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
+        is_running = is_configured and self.health_check.running
+        
+        if is_configured:
+            config = self.health_check.config
+            print(f"\nCurrent Configuration:")
+            print(f"HEC URL: {config['hec_url']}")
+            print(f"HEC Token: {'*' * 10}")
+            print(f"Interval: {config['interval']} seconds")
+            print(f"Status: {'Running' if is_running else 'Stopped'}")
+            
+            print("\nOptions:")
+            print("1. Update Configuration")
+            print("2. Start/Stop Health Check")
+            print("3. Return to Main Menu")
+            
+            choice = prompt(
+                HTML("<ansicyan>Choose an option (1-3): </ansicyan>"),
+                style=self.prompt_style
+            )
+            
+            if choice == "1":
+                self._update_health_check()
+                return  # Return after update to prevent menu stacking
+            elif choice == "2":
+                if is_running:
+                    self.health_check.stop()
+                    print(f"{Fore.YELLOW}Health check monitoring stopped.{ColorStyle.RESET_ALL}")
+                else:
+                    if self.health_check.start():
+                        print(f"{Fore.GREEN}Health check monitoring started.{ColorStyle.RESET_ALL}")
+                    else:
+                        print(f"{Fore.RED}Failed to start health check monitoring.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
+                clear()  # Clear screen when returning
+                return
+            elif choice == "3":
+                clear()  # Clear screen when returning
+                return
+            else:
+                print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
+                self._configure_health_check()  # Recursive call to show the menu again
+                return
+        else:
+            print("Health check is not configured.")
+            print("\nOptions:")
+            print("1. Configure Health Check")
+            print("2. Return to Main Menu")
+            
+            choice = prompt(
+                HTML("<ansicyan>Choose an option (1-2): </ansicyan>"),
+                style=self.prompt_style
+            )
+            
+            if choice == "1":
+                self._update_health_check()
+                return  # Return after update to prevent menu stacking
+            elif choice == "2":
+                clear()  # Clear screen when returning
+                return
+            else:
+                print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
+                self._configure_health_check()  # Recursive call to show the menu again
+                return
+   def _update_health_check(self):
         """Update health check configuration."""
         clear()
         self._print_header()
@@ -971,3 +916,382 @@ class CLI:
         input("Press Enter to continue...")
         clear()  # Clear screen when returning
         return
+           
+   def _view_live_status(self):
+        """View system and sources status with live updates."""
+        # Use curses-based display if available, otherwise use simple console-based display
+        if CURSES_AVAILABLE:
+            self._view_live_status_curses()
+        else:
+            self._view_live_status_simple()
+    
+    def _view_live_status_simple(self):
+        """Simple live status display for Windows systems without curses."""
+        self.status_running = True
+        
+        # Store stats for each source
+        source_stats = {}
+        
+        print(f"{Fore.CYAN}=== LIVE STATUS DISPLAY ==={ColorStyle.RESET_ALL}")
+        print("Press Ctrl+C to return to the main menu.")
+        print("")
+        
+        try:
+            while self.status_running:
+                # Clear screen (Windows-compatible)
+                os.system('cls' if os.name == 'nt' else 'clear')
+                
+                # Print title and current time
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"{Fore.CYAN}=== LOG COLLECTOR - LIVE STATUS ==={ColorStyle.RESET_ALL}")
+                print(f"Time: {current_time}")
+                print("Press Ctrl+C to return to the main menu.")
+                print("")
+                
+                # System information
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+                memory = psutil.virtual_memory()
+                disk = psutil.disk_usage('/')
+                
+                print(f"{Fore.CYAN}SYSTEM RESOURCES:{ColorStyle.RESET_ALL}")
+                
+                # CPU with color
+                cpu_color = Fore.GREEN if cpu_percent < 70 else (Fore.YELLOW if cpu_percent < 90 else Fore.RED)
+                print(f"  CPU Usage: {cpu_color}{cpu_percent}%{ColorStyle.RESET_ALL}")
+                
+                # Memory with color
+                mem_color = Fore.GREEN if memory.percent < 70 else (Fore.YELLOW if memory.percent < 90 else Fore.RED)
+                print(f"  Memory: {mem_color}{memory.percent}%{ColorStyle.RESET_ALL} ({memory.used // (1024**2)} MB / {memory.total // (1024**2)} MB)")
+                
+                # Disk with color
+                disk_color = Fore.GREEN if disk.percent < 70 else (Fore.YELLOW if disk.percent < 90 else Fore.RED)
+                print(f"  Disk: {disk_color}{disk.percent}%{ColorStyle.RESET_ALL} ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)")
+                
+                thread_count = threading.active_count()
+                print(f"  Active Threads: {thread_count}")
+                print("")
+                
+                # Health check status
+                print(f"{Fore.CYAN}HEALTH CHECK:{ColorStyle.RESET_ALL}")
+                is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
+                is_running = is_configured and self.health_check.running
+                
+                if is_configured:
+                    hc_color = Fore.GREEN if is_running else Fore.RED
+                    print(f"  Status: {hc_color}{'Running' if is_running else 'Stopped'}{ColorStyle.RESET_ALL}")
+                    
+                    if is_running:
+                        interval = self.health_check.config['interval']
+                        print(f"  Interval: {interval} seconds")
+                else:
+                    print(f"  {Fore.YELLOW}Not Configured{ColorStyle.RESET_ALL}")
+                
+                print("")
+                
+                # Sources information
+                sources = self.source_manager.get_sources()
+                
+                if sources:
+                    print(f"{Fore.CYAN}SOURCES STATUS:{ColorStyle.RESET_ALL}")
+                    print(f"  {'ID':<36} {'NAME':<15} {'TARGET':<8} {'QUEUE':<8} {'THREADS':<8} {'TOTAL LOGS':<12} {'STATUS':<8}")
+                    print(f"  {'-' * 95}")
+                    
+                    for source_id, source in sources.items():
+                        # Initialize stats if not exist
+                        if source_id not in source_stats:
+                            source_stats[source_id] = {"processed_logs": 0}
+                        
+                        # Get current stats
+                        stats = self.processor_manager.get_source_stats(source_id)
+                        
+                        # Update our stored stats if newer
+                        if stats["processed_logs"] > source_stats[source_id]["processed_logs"]:
+                            source_stats[source_id] = stats
+                        
+                        # Get display values
+                        name = source["source_name"][:15]
+                        target_type = source["target_type"][:8]
+                        queue_size = stats["queue_size"]
+                        active_processors = stats["active_processors"]
+                        processed_logs = stats["processed_logs"]
+                        
+                        # Check if listener is active
+                        listener_port = source["listener_port"]
+                        listener_protocol = source["protocol"]
+                        listener_key = f"{listener_protocol}:{listener_port}"
+                        listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
+                        
+                        # Set status and color
+                        if listener_active and active_processors > 0:
+                            status = "ACTIVE"
+                            status_color = Fore.GREEN
+                        elif listener_active:
+                            status = "PARTIAL"
+                            status_color = Fore.YELLOW
+                        else:
+                            status = "INACTIVE"
+                            status_color = Fore.RED
+                        
+                        # Queue size color
+                        queue_color = Fore.GREEN if queue_size < 1000 else (Fore.YELLOW if queue_size < 5000 else Fore.RED)
+                        
+                        # Format the row
+                        print(f"  {source_id:<36} {name:<15} {target_type:<8} {queue_color}{queue_size:<8}{ColorStyle.RESET_ALL} {active_processors:<8} {processed_logs:<12} {status_color}{status:<8}{ColorStyle.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
+                
+                # Sleep briefly before next update
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            # User pressed Ctrl+C to exit
+            self.status_running = False
+            # Clear screen before returning to menu
+            os.system('cls' if os.name == 'nt' else 'clear')
+
+   def _view_live_status_curses(self):
+        """View live system and sources status using curses for Unix systems."""
+        try:
+            # Initialize curses
+            stdscr = curses.initscr()
+            curses.start_color()
+            curses.use_default_colors()
+            curses.curs_set(0)  # Hide cursor
+            curses.noecho()
+            curses.cbreak()
+            stdscr.keypad(True)
+            stdscr.timeout(500)  # Set getch timeout to 500ms
+            
+            # Define color pairs
+            curses.init_pair(1, curses.COLOR_GREEN, -1)  # Green text
+            curses.init_pair(2, curses.COLOR_RED, -1)    # Red text
+            curses.init_pair(3, curses.COLOR_CYAN, -1)   # Cyan text
+            curses.init_pair(4, curses.COLOR_YELLOW, -1) # Yellow text
+            
+            # Colors
+            GREEN = curses.color_pair(1)
+            RED = curses.color_pair(2)
+            CYAN = curses.color_pair(3)
+            YELLOW = curses.color_pair(4)
+            NORMAL = curses.A_NORMAL
+            BOLD = curses.A_BOLD
+            
+            # Start live update
+            self.status_running = True
+            max_y, max_x = stdscr.getmaxyx()
+            
+            # Store stats for each source
+            source_stats = {}
+            
+            while self.status_running:
+                try:
+                    # Clear screen
+                    stdscr.clear()
+                    
+                    # Update max size in case terminal was resized
+                    max_y, max_x = stdscr.getmaxyx()
+                    
+                    # Get current time
+                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Print header
+                    stdscr.addstr(0, 0, "LOG COLLECTOR - LIVE STATUS", CYAN | BOLD)
+                    stdscr.addstr(0, max_x - len(current_time) - 1, current_time)
+                    stdscr.addstr(1, 0, "Press any key to return to main menu.")
+                    
+                    # System information
+                    cpu_percent = psutil.cpu_percent(interval=0.1)
+                    memory = psutil.virtual_memory()
+                    disk = psutil.disk_usage('/')
+                    
+                    # Print system info
+                    row = 3
+                    stdscr.addstr(row, 0, "SYSTEM RESOURCES:", CYAN | BOLD)
+                    row += 1
+                    
+                    cpu_str = f"CPU Usage: {cpu_percent}%"
+                    cpu_color = GREEN if cpu_percent < 70 else (YELLOW if cpu_percent < 90 else RED)
+                    stdscr.addstr(row, 2, cpu_str, cpu_color)
+                    row += 1
+                    
+                    mem_str = f"Memory: {memory.percent}% ({memory.used // (1024**2)} MB / {memory.total // (1024**2)} MB)"
+                    mem_color = GREEN if memory.percent < 70 else (YELLOW if memory.percent < 90 else RED)
+                    stdscr.addstr(row, 2, mem_str, mem_color)
+                    row += 1
+                    
+                    disk_str = f"Disk: {disk.percent}% ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)"
+                    disk_color = GREEN if disk.percent < 70 else (YELLOW if disk.percent < 90 else RED)
+                    stdscr.addstr(row, 2, disk_str, disk_color)
+                    row += 1
+                    
+                    thread_count = threading.active_count()
+                    stdscr.addstr(row, 2, f"Active Threads: {thread_count}")
+                    row += 2
+                    
+                    # Health check status
+                    stdscr.addstr(row, 0, "HEALTH CHECK:", CYAN | BOLD)
+                    row += 1
+                    
+                    is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
+                    is_running = is_configured and self.health_check.running
+                    
+                    if is_configured:
+                        hc_str = f"Status: {'Running' if is_running else 'Stopped'}"
+                        hc_color = GREEN if is_running else RED
+                        stdscr.addstr(row, 2, hc_str, hc_color)
+                        row += 1
+                        
+                        if is_running:
+                            interval = self.health_check.config['interval']
+                            stdscr.addstr(row, 2, f"Interval: {interval} seconds")
+                            row += 1
+                    else:
+                        stdscr.addstr(row, 2, "Not Configured", YELLOW)
+                        row += 1
+                    
+                    # Sources information
+                    row += 1
+                    sources = self.source_manager.get_sources()
+                    
+                    if sources:
+                        stdscr.addstr(row, 0, "SOURCES STATUS:", CYAN | BOLD)
+                        row += 1
+                        
+                        # Table header
+                        header_format = f"{'ID':<8} {'NAME':<15} {'TARGET':<8} {'QUEUE':<8} {'THREADS':<8} {'TOTAL LOGS':<12} {'STATUS':<8}"
+                        stdscr.addstr(row, 2, header_format, BOLD)
+                        row += 1
+                        stdscr.addstr(row, 2, "-" * (len(header_format)))
+                        row += 1
+                        
+                        # Get stats for each source
+                        for source_id, source in sources.items():
+                            # Initialize stats if not exist
+                            if source_id not in source_stats:
+                                source_stats[source_id] = {"processed_logs": 0}
+                            
+                            # Get current stats
+                            stats = self.processor_manager.get_source_stats(source_id)
+                            
+                            # Update our stored stats if newer
+                            if stats["processed_logs"] > source_stats[source_id]["processed_logs"]:
+                                source_stats[source_id] = stats
+                            
+                            # Get display values
+                            name = source["source_name"][:15]  # Truncate if too long
+                            target_type = source["target_type"][:8]
+                            queue_size = stats["queue_size"]
+                            active_processors = stats["active_processors"]
+                            processed_logs = stats["processed_logs"]
+                            
+                            # Check if listener is active
+                            listener_port = source["listener_port"]
+                            listener_protocol = source["protocol"]
+                            listener_key = f"{listener_protocol}:{listener_port}"
+                            listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
+                            
+                            # Set status and color
+                            if listener_active and active_processors > 0:
+                                status = "ACTIVE"
+                                status_color = GREEN
+                            elif listener_active:
+                                status = "PARTIAL"
+                                status_color = YELLOW
+                            else:
+                                status = "INACTIVE"
+                                status_color = RED
+                            
+                            # Queue size color
+                            queue_color = GREEN if queue_size < 1000 else (YELLOW if queue_size < 5000 else RED)
+                            
+                            # Print source row
+                            id_short = source_id[:7]  # Truncate ID to first 7 chars
+                            
+                            # Format the row
+                            stdscr.addstr(row, 2, f"{id_short:<8}", NORMAL)
+                            stdscr.addstr(f"{name:<15}", NORMAL)
+                            stdscr.addstr(f"{target_type:<8}", NORMAL)
+                            stdscr.addstr(f"{queue_size:<8}", queue_color)
+                            stdscr.addstr(f"{active_processors:<8}", NORMAL)
+                            stdscr.addstr(f"{processed_logs:<12}", NORMAL)
+                            stdscr.addstr(f"{status:<8}", status_color)
+                            
+                            row += 1
+                            
+                            # Check if we're running out of screen space
+                            if row >= max_y - 2:
+                                stdscr.addstr(row, 2, "... more sources not shown (screen too small) ...", YELLOW)
+                                break
+                    else:
+                        stdscr.addstr(row, 2, "No sources configured.", YELLOW)
+                    
+                    # Refresh the screen
+                    stdscr.refresh()
+                    
+                    # Check for key press
+                    key = stdscr.getch()
+                    if key != -1:  # Any key pressed
+                        self.status_running = False
+                        break
+                    
+                    # Sleep briefly before next update
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    # Log error but continue
+                    logger.error(f"Error in live status display: {e}")
+                    time.sleep(1)
+        
+        except Exception as e:
+            # Log the error
+            logger.error(f"Error initializing curses: {e}")
+        
+        finally:
+            # Clean up curses
+            if 'stdscr' in locals():
+                stdscr.keypad(False)
+            curses.nocbreak()
+            curses.echo()
+            curses.endwin()
+            self.status_running = False
+            
+            # Give terminal a moment to reset
+            time.sleep(0.5)
+
+   def _exit_application(self):
+        """Exit the application cleanly."""
+        print(f"\n{Fore.YELLOW}Are you sure you want to exit?{ColorStyle.RESET_ALL}")
+        confirm = prompt("Exit the application? (y/n): ")
+        
+        if confirm.lower() == 'y':
+            self._clean_exit()
+            print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
+            sys.exit(0)
+        else:
+            print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
+            return
+    
+    def _clean_exit(self):
+        """Clean up resources before exiting."""
+        print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
+        
+        # Stop status display if running
+        if self.status_running:
+            self.status_running = False
+            if self.status_thread and self.status_thread.is_alive():
+                self.status_thread.join(timeout=2)
+        
+        # Stop health check if running
+        if hasattr(self.health_check, 'running') and self.health_check.running:
+            print("- Stopping health check...")
+            self.health_check.stop()
+        
+        # Stop processor manager
+        print("- Stopping processors...")
+        self.processor_manager.stop()
+        
+        # Stop listener manager
+        print("- Stopping listeners...")
+        self.listener_manager.stop()
+        
+        print(f"{Fore.CYAN}All services stopped.{ColorStyle.RESET_ALL}")

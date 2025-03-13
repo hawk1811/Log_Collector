@@ -837,7 +837,8 @@ class CLI:
                 input("Press Enter to continue...")
                 self._configure_health_check()  # Recursive call to show the menu again
                 return
-   def _update_health_check(self):
+                
+    def _update_health_check(self):
         """Update health check configuration."""
         clear()
         self._print_header()
@@ -917,7 +918,7 @@ class CLI:
         clear()  # Clear screen when returning
         return
            
-   def _view_live_status(self):
+    def _view_live_status(self):
         """View system and sources status with live updates."""
         # Use curses-based display if available, otherwise use simple console-based display
         if CURSES_AVAILABLE:
@@ -1049,7 +1050,7 @@ class CLI:
             # Clear screen before returning to menu
             os.system('cls' if os.name == 'nt' else 'clear')
 
-   def _view_live_status_curses(self):
+    def _view_live_status_curses(self):
         """View live system and sources status using curses for Unix systems."""
         try:
             # Initialize curses
@@ -1258,7 +1259,7 @@ class CLI:
             # Give terminal a moment to reset
             time.sleep(0.5)
 
-   def _exit_application(self):
+    def _exit_application(self):
         """Exit the application cleanly."""
         print(f"\n{Fore.YELLOW}Are you sure you want to exit?{ColorStyle.RESET_ALL}")
         confirm = prompt("Exit the application? (y/n): ")

@@ -43,8 +43,16 @@ class SourceManager:
         
         if source_data.get("target_type") == "HEC" and "batch_size" not in source_data:
             source_data["batch_size"] = DEFAULT_HEC_BATCH_SIZE
-        elif source_data.get("target_type") == "Folder" and "batch_size" not in source_data:
+        elif source_data.get("target_type") == "FOLDER" and "batch_size" not in source_data:
             source_data["batch_size"] = DEFAULT_FOLDER_BATCH_SIZE
+        
+        # Check if IP is already in use
+        for existing_id, existing_source in self.sources.items():
+            if existing_source["source_ip"] == source_data["source_ip"]:
+                return {
+                    "success": False,
+                    "error": f"IP address {source_data['source_ip']} is already used by source '{existing_source['source_name']}'"
+                }
         
         # Validate the source before adding
         validation_result = self.validate_source(source_data)
@@ -82,6 +90,16 @@ class SourceManager:
         # Get existing data and update with new values
         source_data = self.sources[source_id].copy()
         source_data.update(updated_data)
+        
+        # Check if updated IP is already in use by another source
+        if "source_ip" in updated_data:
+            new_ip = updated_data["source_ip"]
+            for existing_id, existing_source in self.sources.items():
+                if existing_id != source_id and existing_source["source_ip"] == new_ip:
+                    return {
+                        "success": False,
+                        "error": f"IP address {new_ip} is already used by source '{existing_source['source_name']}'"
+                    }
         
         # Validate the updated source
         validation_result = self.validate_source(source_data)
@@ -165,7 +183,7 @@ class SourceManager:
             }
         
         # Validate target-specific settings
-        if source_data["target_type"] == "Folder":
+        if source_data["target_type"] == "FOLDER":
             if "folder_path" not in source_data:
                 return {
                     "valid": False,
@@ -246,7 +264,7 @@ class SourceManager:
         else:
             return {
                 "valid": False,
-                "error": "Target type must be either Folder or HEC"
+                "error": "Target type must be either FOLDER or HEC"
             }
         
         # All validations passed

@@ -82,6 +82,8 @@ class CLI:
     
     def _show_main_menu(self):
         """Display main menu and handle commands."""
+        clear()
+        self._print_header()
         print("\nMain Menu:")
         print("1. Add New Source")
         print("2. Manage Sources")
@@ -111,6 +113,7 @@ class CLI:
     def _add_source(self):
         """Add a new log source."""
         clear()
+        self._print_header()
         print(f"{Fore.CYAN}=== Add New Source ==={ColorStyle.RESET_ALL}")
         
         source_data = {}
@@ -119,12 +122,23 @@ class CLI:
         source_data["source_name"] = prompt("Source Name: ")
         if not source_data["source_name"]:
             print(f"{Fore.RED}Source name cannot be empty.{ColorStyle.RESET_ALL}")
+            input("Press Enter to continue...")
             return
         
         # Get source IP
         ip_pattern = r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
+        
+        # Check if IP already exists in any source
+        existing_ips = [src["source_ip"] for src in self.source_manager.get_sources().values()]
+        
         while True:
             source_data["source_ip"] = prompt("Source IP: ")
+            
+            # Check if the IP is already in use
+            if source_data["source_ip"] in existing_ips:
+                print(f"{Fore.RED}This IP is already used by another source. Please enter a different IP.{ColorStyle.RESET_ALL}")
+                continue
+                
             if re.match(ip_pattern, source_data["source_ip"]):
                 # Validate each octet
                 octets = [int(octet) for octet in source_data["source_ip"].split(".")]
@@ -145,33 +159,45 @@ class CLI:
             except ValueError:
                 print(f"{Fore.RED}Invalid port. Please enter a valid number.{ColorStyle.RESET_ALL}")
         
-        # Get protocol
-        protocol = prompt("Protocol (UDP/TCP) [UDP]: ")
-        if protocol and protocol.upper() in ["UDP", "TCP"]:
-            source_data["protocol"] = protocol.upper()
+        # Get protocol - simplified to accept single letter
+        protocol = prompt("Protocol (u/t) [u for UDP, t for TCP]: ")
+        if protocol.lower() == 't':
+            source_data["protocol"] = "TCP"
         else:
-            source_data["protocol"] = DEFAULT_UDP_PROTOCOL
-            print(f"Using default protocol: {DEFAULT_UDP_PROTOCOL}")
+            source_data["protocol"] = "UDP"
+            print(f"Using protocol: UDP")
         
-        # Get target type
+        # Get target type - simplified to accept single letter
         while True:
-            target_type = prompt("Target Type (Folder/HEC): ")
-            if target_type.upper() in ["FOLDER", "HEC"]:
-                source_data["target_type"] = target_type.upper()
+            target_type = prompt("Target Type (f/h) [f for Folder, h for HEC]: ")
+            if target_type.lower() == 'f':
+                source_data["target_type"] = "FOLDER"
                 break
-            print(f"{Fore.RED}Invalid target type. Please enter Folder or HEC.{ColorStyle.RESET_ALL}")
+            elif target_type.lower() == 'h':
+                source_data["target_type"] = "HEC"
+                break
+            print(f"{Fore.RED}Invalid target type. Please enter f for Folder or h for HEC.{ColorStyle.RESET_ALL}")
         
         # Get target-specific settings
         if source_data["target_type"] == "FOLDER":
-            # Get folder path
+            # Get folder path with improved guidance
+            print(f"\n{Fore.CYAN}Folder Path Examples:{ColorStyle.RESET_ALL}")
+            print("  - Local folder: C:\\logs\\collector")
+            print("  - Network share: \\\\server\\share\\logs")
+            print("  - Linux path: /var/log/collector")
+            
             while True:
-                folder_path = prompt("Folder Path: ")
+                folder_path = prompt("\nFolder Path: ")
                 path = Path(folder_path)
+                
+                # First check if the path exists
                 if not path.exists():
                     try:
                         os.makedirs(path, exist_ok=True)
+                        print(f"{Fore.GREEN}Created folder: {path}{ColorStyle.RESET_ALL}")
                     except Exception as e:
                         print(f"{Fore.RED}Error creating folder: {e}{ColorStyle.RESET_ALL}")
+                        print(f"{Fore.YELLOW}Please ensure the path is valid and you have permission to create it.{ColorStyle.RESET_ALL}")
                         continue
                 
                 # Check if folder is writable
@@ -181,9 +207,11 @@ class CLI:
                         f.write("test")
                     os.remove(test_file)
                     source_data["folder_path"] = str(path)
+                    print(f"{Fore.GREEN}Folder is accessible and writable.{ColorStyle.RESET_ALL}")
                     break
                 except Exception as e:
                     print(f"{Fore.RED}Folder is not writable: {e}{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Please ensure you have write permissions to this folder.{ColorStyle.RESET_ALL}")
             
             # Get batch size
             batch_size = prompt(f"Batch Size [{DEFAULT_FOLDER_BATCH_SIZE}]: ")
@@ -205,6 +233,7 @@ class CLI:
             hec_token = prompt("HEC Token: ")
             if not hec_token:
                 print(f"{Fore.RED}HEC token cannot be empty.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
                 return
             source_data["hec_token"] = hec_token
             
@@ -235,6 +264,7 @@ class CLI:
         """Manage existing sources."""
         while True:
             clear()
+            self._print_header()
             print(f"{Fore.CYAN}=== Manage Sources ==={ColorStyle.RESET_ALL}")
             
             sources = self.source_manager.get_sources()
@@ -275,6 +305,7 @@ class CLI:
         """Manage a specific source."""
         while True:
             clear()
+            self._print_header()
             source = self.source_manager.get_source(source_id)
             if not source:
                 print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
@@ -321,6 +352,7 @@ class CLI:
     def _edit_source(self, source_id):
         """Edit a source configuration."""
         clear()
+        self._print_header()
         source = self.source_manager.get_source(source_id)
         if not source:
             print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
@@ -342,11 +374,21 @@ class CLI:
         # Get source IP
         current_ip = source['source_ip']
         ip_pattern = r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$"
+        
+        # Check if IP already exists in any OTHER source
+        existing_ips = [src["source_ip"] for src_id, src in self.source_manager.get_sources().items() 
+                       if src_id != source_id]
+        
         while True:
             new_ip = prompt(f"Source IP [{current_ip}]: ")
             if not new_ip:
                 break
             
+            # Check if the IP is already in use by another source
+            if new_ip in existing_ips:
+                print(f"{Fore.RED}This IP is already used by another source. Please enter a different IP.{ColorStyle.RESET_ALL}")
+                continue
+                
             if re.match(ip_pattern, new_ip):
                 # Validate each octet
                 octets = [int(octet) for octet in new_ip.split(".")]
@@ -373,25 +415,35 @@ class CLI:
             except ValueError:
                 print(f"{Fore.RED}Invalid port. Please enter a valid number.{ColorStyle.RESET_ALL}")
         
-        # Get protocol
+        # Get protocol - simplified to accept single letter
         current_protocol = source['protocol']
-        new_protocol = prompt(f"Protocol (UDP/TCP) [{current_protocol}]: ")
-        if new_protocol and new_protocol.upper() in ["UDP", "TCP"]:
-            updated_data["protocol"] = new_protocol.upper()
+        new_protocol = prompt(f"Protocol (u/t) [current: {current_protocol}]: ")
+        if new_protocol:
+            if new_protocol.lower() == 't':
+                updated_data["protocol"] = "TCP"
+            elif new_protocol.lower() == 'u':
+                updated_data["protocol"] = "UDP"
         
         # Target type cannot be changed, but target settings can be updated
         if source['target_type'] == "FOLDER":
-            # Get folder path
+            # Get folder path with improved guidance
             current_path = source['folder_path']
-            new_path = prompt(f"Folder Path [{current_path}]: ")
+            print(f"\n{Fore.CYAN}Current folder path: {current_path}{ColorStyle.RESET_ALL}")
+            print(f"\n{Fore.CYAN}Folder Path Examples:{ColorStyle.RESET_ALL}")
+            print("  - Local folder: C:\\logs\\collector")
+            print("  - Network share: \\\\server\\share\\logs")
+            print("  - Linux path: /var/log/collector")
+            
+            new_path = prompt(f"\nNew Folder Path (or leave blank to keep current): ")
             if new_path:
                 path = Path(new_path)
                 if not path.exists():
                     try:
                         os.makedirs(path, exist_ok=True)
-                        print(f"Created folder: {path}")
+                        print(f"{Fore.GREEN}Created folder: {path}{ColorStyle.RESET_ALL}")
                     except Exception as e:
                         print(f"{Fore.RED}Error creating folder: {e}{ColorStyle.RESET_ALL}")
+                        print(f"{Fore.YELLOW}Please ensure the path is valid and you have permission to create it.{ColorStyle.RESET_ALL}")
                         input("Press Enter to continue...")
                         return
                 
@@ -402,8 +454,10 @@ class CLI:
                         f.write("test")
                     os.remove(test_file)
                     updated_data["folder_path"] = str(path)
+                    print(f"{Fore.GREEN}Folder is accessible and writable.{ColorStyle.RESET_ALL}")
                 except Exception as e:
                     print(f"{Fore.RED}Folder is not writable: {e}{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Please ensure you have write permissions to this folder.{ColorStyle.RESET_ALL}")
                     input("Press Enter to continue...")
                     return
             
@@ -485,6 +539,7 @@ class CLI:
     def _configure_health_check(self):
         """Configure health check monitoring."""
         clear()
+        self._print_header()
         print(f"{Fore.CYAN}=== Health Check Configuration ==={ColorStyle.RESET_ALL}")
         
         # Check if health check is already configured
@@ -548,6 +603,7 @@ class CLI:
     def _update_health_check(self):
         """Update health check configuration."""
         clear()
+        self._print_header()
         print(f"{Fore.CYAN}=== Configure Health Check ==={ColorStyle.RESET_ALL}")
         
         # Check if health check is already configured
@@ -614,6 +670,7 @@ class CLI:
     def _view_status(self):
         """View system and sources status."""
         clear()
+        self._print_header()
         print(f"{Fore.CYAN}=== System Status ==={ColorStyle.RESET_ALL}")
         
         # System information
@@ -642,30 +699,3 @@ class CLI:
                 queue_size = 0
                 if source_id in self.processor_manager.queues:
                     queue_size = self.processor_manager.queues[source_id].qsize()
-                
-                # Count active processors
-                active_processors = sum(1 for p_id, p_thread in self.processor_manager.processors.items()
-                                       if p_id.startswith(f"{source_id}:") and p_thread.is_alive())
-                
-                print(f"\nSource: {source['source_name']} (ID: {source_id})")
-                print(f"Listener: {source['source_ip']}:{source['listener_port']} ({source['protocol']})")
-                print(f"Target: {source['target_type']}")
-                print(f"Queue Size: {queue_size}")
-                print(f"Active Processors: {active_processors}")
-        else:
-            print(f"\n{Fore.YELLOW}No active sources configured.{ColorStyle.RESET_ALL}")
-        
-        # Health check status
-        is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
-        is_running = is_configured and self.health_check.running
-        
-        print(f"\n{Fore.CYAN}Health Check:{ColorStyle.RESET_ALL}")
-        if is_configured:
-            config = self.health_check.config
-            status = "Running" if is_running else "Stopped"
-            print(f"Status: {Fore.GREEN if is_running else Fore.RED}{status}{ColorStyle.RESET_ALL}")
-            print(f"Interval: {config['interval']} seconds")
-        else:
-            print(f"Status: {Fore.RED}Not Configured{ColorStyle.RESET_ALL}")
-        
-        input("\nPress Enter to return to main menu...")

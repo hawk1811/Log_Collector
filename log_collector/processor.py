@@ -16,7 +16,7 @@ from log_collector.config import (
     DEFAULT_QUEUE_LIMIT,
 )
 
-# Add maximum flush interval (1 minute) in seconds
+# Maximum time (in seconds) to wait before flushing a partial batch
 MAX_FLUSH_INTERVAL = 60
 
 class ProcessorManager:
@@ -127,7 +127,8 @@ class ProcessorManager:
             source_id: Source ID this processor handles
         """
         logger.info(f"Starting processor {processor_id} for source {source_id}")
-        last_flush_time = time.time()  # Track when we last flushed logs
+        last_activity_time = time.time()  # Track when we last received a log
+        batch = []  # Keep batch state between iterations
         
         while self.running:
             try:
@@ -141,36 +142,14 @@ class ProcessorManager:
                 batch_size = int(source.get("batch_size", 
                                            500 if source["target_type"] == "HEC" else 5000))
                 
-                # Collect logs into batch
-                batch = []
-                start_time = time.time()
-                current_time = start_time
-                timeout = 0.1  # 100ms timeout for batch collection
+                # Check if we need to force a flush due to inactivity
+                current_time = time.time()
+                time_since_activity = current_time - last_activity_time
+                force_flush = batch and time_since_activity >= MAX_FLUSH_INTERVAL
                 
-                # Calculate time since last flush
-                time_since_flush = current_time - last_flush_time
-                
-                # Determine if we should force a flush based on time
-                force_flush = time_since_flush >= MAX_FLUSH_INTERVAL
-                
-                # Shorter timeout if forcing flush (to check queue quickly)
+                # If we need to force flush, process the current batch
                 if force_flush:
-                    timeout = min(timeout, 0.01)
-                
-                while len(batch) < batch_size and current_time - start_time < timeout:
-                    try:
-                        log_str = self.queues[source_id].get(timeout=timeout - (current_time - start_time))
-                        batch.append(log_str)
-                        self.queues[source_id].task_done()
-                    except queue.Empty:
-                        break
-                    current_time = time.time()
-                
-                # Process and deliver batch if:
-                # 1. We have logs AND (batch is full OR collection timeout expired)
-                # 2. OR it's time for a forced flush and we have logs
-                if (batch and (len(batch) >= batch_size or current_time - start_time >= timeout)) or (force_flush and batch):
-                    # Process the batch
+                    logger.info(f"Forced flush after {time_since_activity:.1f}s of inactivity for source {source['source_name']} ({len(batch)} logs)")
                     processed_batch = self._process_batch(batch, source)
                     
                     # Deliver the batch to the target
@@ -179,30 +158,77 @@ class ProcessorManager:
                     elif source["target_type"] == "HEC":
                         self._deliver_to_hec(processed_batch, source)
                     
-                    # Update last flush time
-                    last_flush_time = time.time()
-                    
-                    # Log forced flush event
-                    if force_flush and len(batch) < batch_size:
-                        logger.info(f"Forced flush for source {source['source_name']} after {time_since_flush:.1f}s with {len(batch)} logs")
-                elif force_flush:
-                    # If we forced a flush but had no logs, still update the flush time
-                    last_flush_time = time.time()
+                    # Clear the batch and reset activity time
+                    batch = []
+                    last_activity_time = current_time
+                    continue  # Skip to next iteration
                 
-                # If batch is empty and not forcing flush, wait a bit and try again
-                if not batch and not force_flush:
-                    # Sleep for a small amount to prevent tight loop
-                    # Use shorter sleep when approaching flush interval
-                    sleep_time = 0.1
-                    if MAX_FLUSH_INTERVAL - time_since_flush < 1:
-                        sleep_time = 0.01  # Very short sleep when close to flush interval
-                    time.sleep(sleep_time)
+                # Try to collect more logs for the batch
+                try:
+                    # Determine wait time:
+                    # - If batch empty, wait longer (1 second)
+                    # - If approaching flush interval, wait less time
+                    # - Otherwise, use standard short wait
+                    if not batch:
+                        wait_time = 1.0  # Longer wait when no logs yet
+                    elif MAX_FLUSH_INTERVAL - time_since_activity < 5:
+                        wait_time = 0.1  # Shorter wait when close to timeout
+                    else:
+                        wait_time = 0.5  # Standard wait
+                    
+                    # Get a log if available
+                    log_str = self.queues[source_id].get(timeout=wait_time)
+                    batch.append(log_str)
+                    self.queues[source_id].task_done()
+                    last_activity_time = time.time()  # Update activity timestamp
+                    
+                    # Try to get more logs without blocking (drain queue up to batch size)
+                    while len(batch) < batch_size:
+                        try:
+                            log_str = self.queues[source_id].get_nowait()
+                            batch.append(log_str)
+                            self.queues[source_id].task_done()
+                        except queue.Empty:
+                            break
+                    
+                    # If batch is full, process it
+                    if len(batch) >= batch_size:
+                        processed_batch = self._process_batch(batch, source)
+                        
+                        # Deliver the batch to the target
+                        if source["target_type"] == "FOLDER":
+                            self._deliver_to_folder(processed_batch, source)
+                        elif source["target_type"] == "HEC":
+                            self._deliver_to_hec(processed_batch, source)
+                        
+                        # Clear the batch and reset activity time
+                        batch = []
+                        last_activity_time = time.time()
+                
+                except queue.Empty:
+                    # No log available within timeout, continue waiting
+                    pass
             
             except Exception as e:
                 logger.error(f"Error in processor {processor_id}: {e}")
                 time.sleep(1)  # Prevent tight loop on repeated errors
-                # Reset flush timer after error to avoid immediate retries
-                last_flush_time = time.time()
+        
+        # Ensure any remaining logs are processed when stopping
+        if batch and self.running:
+            try:
+                source = self.source_manager.get_source(source_id)
+                if source:
+                    processed_batch = self._process_batch(batch, source)
+                    
+                    # Deliver the batch to the target
+                    if source["target_type"] == "FOLDER":
+                        self._deliver_to_folder(processed_batch, source)
+                    elif source["target_type"] == "HEC":
+                        self._deliver_to_hec(processed_batch, source)
+                    
+                    logger.info(f"Processed remaining {len(batch)} logs before stopping processor {processor_id}")
+            except Exception as e:
+                logger.error(f"Error processing remaining logs in processor {processor_id}: {e}")
         
         logger.info(f"Processor {processor_id} stopped")
     

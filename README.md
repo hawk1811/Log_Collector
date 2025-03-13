@@ -31,7 +31,7 @@ pip install log-collector
 2. Or install from source:
 
 ```bash
-git clone https://github.com/logcollector/log_collector.git
+git clone https://github.com/hawk1811/LogCollector.git
 cd log_collector
 pip install -e .
 ```

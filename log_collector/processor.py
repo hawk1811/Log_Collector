@@ -33,6 +33,11 @@ class ProcessorManager:
         self.processors = {}  # source_id -> processor thread mapping
         self.running = False
         self.lock = threading.Lock()
+        
+        # Metrics tracking
+        self.processed_logs_count = {}  # source_id -> count mapping
+        self.last_processed_timestamp = {}  # source_id -> timestamp mapping
+        self.metrics_lock = threading.Lock()
     
     def start(self):
         """Start all processor threads."""
@@ -40,6 +45,13 @@ class ProcessorManager:
         
         sources = self.source_manager.get_sources()
         for source_id in sources:
+            # Initialize metrics for each source
+            with self.metrics_lock:
+                if source_id not in self.processed_logs_count:
+                    self.processed_logs_count[source_id] = 0
+                if source_id not in self.last_processed_timestamp:
+                    self.last_processed_timestamp[source_id] = None
+            
             self._ensure_processor(source_id)
         
         logger.info(f"Started processor threads for {len(sources)} sources")
@@ -55,6 +67,18 @@ class ProcessorManager:
         self.processors = {}
         self.queues = {}
         logger.info("All processor threads stopped")
+    
+    def get_metrics(self):
+        """Get current metrics for all sources.
+        
+        Returns:
+            dict: Dictionary with processed_logs_count and last_processed_timestamp
+        """
+        with self.metrics_lock:
+            return {
+                "processed_logs_count": self.processed_logs_count.copy(),
+                "last_processed_timestamp": self.last_processed_timestamp.copy()
+            }
     
     def queue_log(self, log_str, source_id):
         """Queue a log for processing.
@@ -158,6 +182,11 @@ class ProcessorManager:
                     elif source["target_type"] == "HEC":
                         self._deliver_to_hec(processed_batch, source)
                     
+                    # Update metrics for processed logs
+                    with self.metrics_lock:
+                        self.processed_logs_count[source_id] = self.processed_logs_count.get(source_id, 0) + len(batch)
+                        self.last_processed_timestamp[source_id] = datetime.now()
+                    
                     # Clear the batch and reset activity time
                     batch = []
                     last_activity_time = current_time
@@ -201,6 +230,11 @@ class ProcessorManager:
                         elif source["target_type"] == "HEC":
                             self._deliver_to_hec(processed_batch, source)
                         
+                        # Update metrics for processed logs
+                        with self.metrics_lock:
+                            self.processed_logs_count[source_id] = self.processed_logs_count.get(source_id, 0) + len(batch)
+                            self.last_processed_timestamp[source_id] = datetime.now()
+                        
                         # Clear the batch and reset activity time
                         batch = []
                         last_activity_time = time.time()
@@ -225,6 +259,11 @@ class ProcessorManager:
                         self._deliver_to_folder(processed_batch, source)
                     elif source["target_type"] == "HEC":
                         self._deliver_to_hec(processed_batch, source)
+                    
+                    # Update metrics for processed logs
+                    with self.metrics_lock:
+                        self.processed_logs_count[source_id] = self.processed_logs_count.get(source_id, 0) + len(batch)
+                        self.last_processed_timestamp[source_id] = datetime.now()
                     
                     logger.info(f"Processed remaining {len(batch)} logs before stopping processor {processor_id}")
             except Exception as e:

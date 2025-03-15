@@ -153,6 +153,49 @@ def add_source(source_manager, processor_manager, listener_manager, cli):
         if not hec_token:
             print(f"{Fore.RED}HEC token cannot be empty.{ColorStyle.RESET_ALL}")
             input("Press Enter to continue...")
+            return
+        source_data["hec_token"] = hec_token
+        
+        # Get batch size
+        batch_size = prompt(f"Batch Size [{DEFAULT_HEC_BATCH_SIZE}]: ")
+        if batch_size and batch_size.isdigit() and int(batch_size) > 0:
+            source_data["batch_size"] = int(batch_size)
+        else:
+            source_data["batch_size"] = DEFAULT_HEC_BATCH_SIZE
+    
+    # Add the source
+    print(f"\n{Fore.CYAN}Validating source configuration...{ColorStyle.RESET_ALL}")
+    result = source_manager.add_source(source_data)
+    
+    if result["success"]:
+        print(f"{Fore.GREEN}Source added successfully with ID: {result['source_id']}{ColorStyle.RESET_ALL}")
+        
+        # Start newly added source by completely restarting the services
+        print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
+        
+        try:
+            # Stop all services
+            print(f"- Stopping all services...")
+            processor_manager.stop()
+            listener_manager.stop()
+            
+            # Start all services with new configuration
+            print(f"- Starting all services with new configuration...")
+            processor_manager.start()
+            listener_manager.start()
+            
+            print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
+        except Exception as e:
+            print(f"{Fore.RED}Error starting services: {e}{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}Source configuration saved, but service could not be started.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}Failed to add source: {result['error']}{ColorStyle.RESET_ALL}")
+    
+    print("\nReturning to main menu...")
+    input("Press Enter to continue...")
+    clear()  # Ensure screen is cleared before returning
+    return  # Return to previous menu
 
 def edit_source(source_id, source_manager, processor_manager, listener_manager, cli):
     """Edit a source configuration.
@@ -387,49 +430,6 @@ def delete_source(source_id, source_manager, processor_manager, listener_manager
         print(f"{Fore.RED}Failed to delete source: {result['error']}{ColorStyle.RESET_ALL}")
     
     input("Press Enter to continue...")
-        return
-        source_data["hec_token"] = hec_token
-        
-        # Get batch size
-        batch_size = prompt(f"Batch Size [{DEFAULT_HEC_BATCH_SIZE}]: ")
-        if batch_size and batch_size.isdigit() and int(batch_size) > 0:
-            source_data["batch_size"] = int(batch_size)
-        else:
-            source_data["batch_size"] = DEFAULT_HEC_BATCH_SIZE
-    
-    # Add the source
-    print(f"\n{Fore.CYAN}Validating source configuration...{ColorStyle.RESET_ALL}")
-    result = source_manager.add_source(source_data)
-    
-    if result["success"]:
-        print(f"{Fore.GREEN}Source added successfully with ID: {result['source_id']}{ColorStyle.RESET_ALL}")
-        
-        # Start newly added source by completely restarting the services
-        print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
-        
-        try:
-            # Stop all services
-            print(f"- Stopping all services...")
-            processor_manager.stop()
-            listener_manager.stop()
-            
-            # Start all services with new configuration
-            print(f"- Starting all services with new configuration...")
-            processor_manager.start()
-            listener_manager.start()
-            
-            print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
-        except Exception as e:
-            print(f"{Fore.RED}Error starting services: {e}{ColorStyle.RESET_ALL}")
-            print(f"{Fore.YELLOW}Source configuration saved, but service could not be started.{ColorStyle.RESET_ALL}")
-            print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}Failed to add source: {result['error']}{ColorStyle.RESET_ALL}")
-    
-    print("\nReturning to main menu...")
-    input("Press Enter to continue...")
-    clear()  # Ensure screen is cleared before returning
-    return  # Return to previous menu
 
 def manage_sources(source_manager, processor_manager, listener_manager, cli):
     """Manage existing sources.

@@ -248,8 +248,8 @@ class SourceManager:
         return {
             "valid": True
         }
-                "error": f"Source with ID {source_id} does not exist"
-            }
+            "error": f"Source with ID {source_id} does not exist"
+        }
         
         # Get existing data and update with new values
         source_data = self.sources[source_id].copy()

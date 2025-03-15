@@ -1,6 +1,6 @@
 """
-Log Collector - High-performance log collection and processing system.
+Command Line Interface package for Log Collector.
 """
-from .utils import get_version
+from log_collector.cli_main import CLI
 
-__version__ = get_version()
+__all__ = ['CLI']

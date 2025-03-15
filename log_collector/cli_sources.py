@@ -387,7 +387,7 @@ def delete_source(source_id, source_manager, processor_manager, listener_manager
         print(f"{Fore.RED}Failed to delete source: {result['error']}{ColorStyle.RESET_ALL}")
     
     input("Press Enter to continue...")
-            return
+        return
         source_data["hec_token"] = hec_token
         
         # Get batch size

@@ -8,13 +8,15 @@ import time
 import threading
 import queue
 import requests
-import gzip
+import gzip  # Added for compression
 from datetime import datetime
 from pathlib import Path
 
 from log_collector.config import (
     logger,
     DEFAULT_QUEUE_LIMIT,
+    DEFAULT_COMPRESSION_ENABLED,
+    DEFAULT_COMPRESSION_LEVEL,
 )
 
 # Maximum time (in seconds) to wait before flushing a partial batch
@@ -312,7 +314,7 @@ class ProcessorManager:
         return processed_batch
     
     def _deliver_to_folder(self, batch, source):
-        """Deliver a batch of logs to a folder with compression.
+        """Deliver a batch of logs to a folder with optional compression.
         
         Args:
             batch: List of processed log events
@@ -328,14 +330,35 @@ class ProcessorManager:
             
             # Generate timestamp for filename
             timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-            filename = f"{timestamp}.json.gz"  # Updated extension to indicate compression
+            
+            # Check if compression is enabled for this source
+            compression_enabled = source.get("compression_enabled", 
+                                         DEFAULT_COMPRESSION_ENABLED)
+            compression_level = source.get("compression_level", 
+                                       DEFAULT_COMPRESSION_LEVEL)
+            
+            # Set filename based on compression
+            if compression_enabled:
+                filename = f"{timestamp}.json.gz"
+            else:
+                filename = f"{timestamp}.json"
+                
             file_path = folder_path / filename
             
-            # Write logs to compressed file
-            with gzip.open(file_path, "wt", encoding="utf-8") as f:
-                for event in batch:
-                    json.dump(event, f)
-                    f.write("\n")
+            # Write logs based on compression setting
+            if compression_enabled:
+                # Write to compressed file
+                with gzip.open(file_path, "wt", encoding="utf-8", 
+                          compresslevel=compression_level) as f:
+                    for event in batch:
+                        json.dump(event, f)
+                        f.write("\n")
+            else:
+                # Write to regular file
+                with open(file_path, "w", encoding="utf-8") as f:
+                    for event in batch:
+                        json.dump(event, f)
+                        f.write("\n")
             
             # Update index file
             index_path = folder_path / "index.json"
@@ -352,22 +375,28 @@ class ProcessorManager:
                 index_data = {"files": []}
             
             # Add file to index
-            index_data["files"].append({
+            file_info = {
                 "filename": filename,
                 "timestamp": timestamp,
                 "count": len(batch),
-                "compressed": True  # Add flag to indicate this is a compressed file
-            })
+            }
+            
+            # Add compression info if enabled
+            if compression_enabled:
+                file_info["compressed"] = True
+                file_info["compression_level"] = compression_level
+            
+            index_data["files"].append(file_info)
             
             # Write updated index
             with open(index_path, "w") as f:
                 json.dump(index_data, f, indent=2)
             
-            logger.info(f"Delivered {len(batch)} logs to compressed file for source {source['source_name']}")
+            compression_status = "compressed " if compression_enabled else ""
+            logger.info(f"Delivered {len(batch)} logs to {compression_status}file for source {source['source_name']}")
         
         except Exception as e:
             logger.error(f"Error delivering logs to folder for source {source['source_name']}: {e}")
-    
     
     def _deliver_to_hec(self, batch, source):
         """Deliver a batch of logs to HEC.

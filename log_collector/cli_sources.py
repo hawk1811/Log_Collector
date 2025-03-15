@@ -15,6 +15,8 @@ from log_collector.config import (
     DEFAULT_UDP_PROTOCOL,
     DEFAULT_HEC_BATCH_SIZE,
     DEFAULT_FOLDER_BATCH_SIZE,
+    DEFAULT_COMPRESSION_ENABLED,
+    DEFAULT_COMPRESSION_LEVEL,
 )
 
 def add_source(source_manager, processor_manager, listener_manager, cli):
@@ -138,6 +140,20 @@ def add_source(source_manager, processor_manager, listener_manager, cli):
             source_data["batch_size"] = int(batch_size)
         else:
             source_data["batch_size"] = DEFAULT_FOLDER_BATCH_SIZE
+        
+        # Get compression settings
+        enable_compression = prompt(f"Enable compression (y/n) [{DEFAULT_COMPRESSION_ENABLED and 'y' or 'n'}]: ")
+        if enable_compression.lower() == 'n':
+            source_data["compression_enabled"] = False
+        else:
+            source_data["compression_enabled"] = True
+            
+            # Get compression level (1-9, with 9 being highest)
+            compression_level = prompt(f"Compression level (1-9, 9=highest) [{DEFAULT_COMPRESSION_LEVEL}]: ")
+            if compression_level and compression_level.isdigit() and 1 <= int(compression_level) <= 9:
+                source_data["compression_level"] = int(compression_level)
+            else:
+                source_data["compression_level"] = DEFAULT_COMPRESSION_LEVEL
     
     elif source_data["target_type"] == "HEC":
         # Get HEC URL
@@ -322,6 +338,22 @@ def edit_source(source_id, source_manager, processor_manager, listener_manager, 
         new_batch = prompt(f"Batch Size [{current_batch}]: ")
         if new_batch and new_batch.isdigit() and int(new_batch) > 0:
             updated_data["batch_size"] = int(new_batch)
+            
+        # Get compression enabled/disabled
+        current_compression = source.get('compression_enabled', DEFAULT_COMPRESSION_ENABLED)
+        current_compression_str = "y" if current_compression else "n"
+        new_compression = prompt(f"Enable compression (y/n) [{current_compression_str}]: ")
+        
+        if new_compression.lower() in ['y', 'n']:
+            updated_data["compression_enabled"] = (new_compression.lower() == 'y')
+        
+        # Only ask for compression level if compression is enabled
+        if (new_compression.lower() == 'y' or (new_compression == '' and current_compression)):
+            current_level = source.get('compression_level', DEFAULT_COMPRESSION_LEVEL)
+            new_level = prompt(f"Compression level (1-9, 9=highest) [{current_level}]: ")
+            
+            if new_level and new_level.isdigit() and 1 <= int(new_level) <= 9:
+                updated_data["compression_level"] = int(new_level)
     
     elif source['target_type'] == "HEC":
         # Get HEC URL

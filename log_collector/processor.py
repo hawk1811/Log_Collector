@@ -8,6 +8,7 @@ import time
 import threading
 import queue
 import requests
+import gzip
 from datetime import datetime
 from pathlib import Path
 
@@ -311,7 +312,7 @@ class ProcessorManager:
         return processed_batch
     
     def _deliver_to_folder(self, batch, source):
-        """Deliver a batch of logs to a folder.
+        """Deliver a batch of logs to a folder with compression.
         
         Args:
             batch: List of processed log events
@@ -327,11 +328,11 @@ class ProcessorManager:
             
             # Generate timestamp for filename
             timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-            filename = f"{timestamp}.json"
+            filename = f"{timestamp}.json.gz"  # Updated extension to indicate compression
             file_path = folder_path / filename
             
-            # Write logs to file
-            with open(file_path, "w") as f:
+            # Write logs to compressed file
+            with gzip.open(file_path, "wt", encoding="utf-8") as f:
                 for event in batch:
                     json.dump(event, f)
                     f.write("\n")
@@ -354,17 +355,19 @@ class ProcessorManager:
             index_data["files"].append({
                 "filename": filename,
                 "timestamp": timestamp,
-                "count": len(batch)
+                "count": len(batch),
+                "compressed": True  # Add flag to indicate this is a compressed file
             })
             
             # Write updated index
             with open(index_path, "w") as f:
                 json.dump(index_data, f, indent=2)
             
-            logger.info(f"Delivered {len(batch)} logs to folder for source {source['source_name']}")
+            logger.info(f"Delivered {len(batch)} logs to compressed file for source {source['source_name']}")
         
         except Exception as e:
             logger.error(f"Error delivering logs to folder for source {source['source_name']}: {e}")
+    
     
     def _deliver_to_hec(self, batch, source):
         """Deliver a batch of logs to HEC.

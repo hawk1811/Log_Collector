@@ -12,7 +12,7 @@ from log_collector.source_manager import SourceManager
 from log_collector.processor import ProcessorManager
 from log_collector.listener import LogListener
 from log_collector.health_check import HealthCheck
-from log_collector.cli import CLI
+from log_collector import CLI
 from log_collector.utils import get_version
 
 def signal_handler(signum, frame):

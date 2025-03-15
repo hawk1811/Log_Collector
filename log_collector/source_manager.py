@@ -89,6 +89,52 @@ class SourceManager:
                 "error": f"Source with ID {source_id} does not exist"
             }
         
+        # Get existing data and update with new values
+        source_data = self.sources[source_id].copy()
+        source_data.update(updated_data)
+        
+        # Check if updated IP is already in use by another source
+        if "source_ip" in updated_data:
+            new_ip = updated_data["source_ip"]
+            for existing_id, existing_source in self.sources.items():
+                if existing_id != source_id and existing_source["source_ip"] == new_ip:
+                    return {
+                        "success": False,
+                        "error": f"IP address {new_ip} is already used by source '{existing_source['source_name']}'"
+                    }
+        
+        # Validate the updated source
+        validation_result = self.validate_source(source_data)
+        if not validation_result["valid"]:
+            return {
+                "success": False,
+                "error": validation_result["error"]
+            }
+        
+        # Update the source
+        self.sources[source_id] = source_data
+        
+        # Save the updated sources
+        if save_sources(self.sources):
+            logger.info(f"Updated source: {source_data['source_name']} (ID: {source_id})")
+            return {
+                "success": True
+            }
+        else:
+            logger.error(f"Failed to update source: {source_data['source_name']}")
+            return {
+                "success": False,
+                "error": "Failed to save source configuration"
+            }
+    
+    def delete_source(self, source_id):
+        """Delete a log source."""
+        if source_id not in self.sources:
+            return {
+                "success": False,
+                "error": f"Source with ID {source_id} does not exist"
+            }
+        
         source_name = self.sources[source_id]["source_name"]
         del self.sources[source_id]
         
@@ -248,49 +294,3 @@ class SourceManager:
         return {
             "valid": True
         }
-            "error": f"Source with ID {source_id} does not exist"
-        }
-        
-        # Get existing data and update with new values
-        source_data = self.sources[source_id].copy()
-        source_data.update(updated_data)
-        
-        # Check if updated IP is already in use by another source
-        if "source_ip" in updated_data:
-            new_ip = updated_data["source_ip"]
-            for existing_id, existing_source in self.sources.items():
-                if existing_id != source_id and existing_source["source_ip"] == new_ip:
-                    return {
-                        "success": False,
-                        "error": f"IP address {new_ip} is already used by source '{existing_source['source_name']}'"
-                    }
-        
-        # Validate the updated source
-        validation_result = self.validate_source(source_data)
-        if not validation_result["valid"]:
-            return {
-                "success": False,
-                "error": validation_result["error"]
-            }
-        
-        # Update the source
-        self.sources[source_id] = source_data
-        
-        # Save the updated sources
-        if save_sources(self.sources):
-            logger.info(f"Updated source: {source_data['source_name']} (ID: {source_id})")
-            return {
-                "success": True
-            }
-        else:
-            logger.error(f"Failed to update source: {source_data['source_name']}")
-            return {
-                "success": False,
-                "error": "Failed to save source configuration"
-            }
-    
-    def delete_source(self, source_id):
-        """Delete a log source."""
-        if source_id not in self.sources:
-            return {
-                "success": False,

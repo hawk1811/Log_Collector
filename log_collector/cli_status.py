@@ -155,6 +155,16 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                     print(f"  Target: {source['target_type']}")
                     if source['target_type'] == 'FOLDER':
                         print(f"  Folder Path: {source.get('folder_path', 'Not specified')}")
+                        
+                        # Display compression settings
+                        compression_enabled = source.get('compression_enabled', 'Default')
+                        if compression_enabled is True:
+                            compression_level = source.get('compression_level', 'Default')
+                            print(f"  Compression: Enabled (Level {compression_level})")
+                        elif compression_enabled is False:
+                            print(f"  Compression: Disabled")
+                        else:
+                            print(f"  Compression: Default")
                     elif source['target_type'] == 'HEC':
                         print(f"  HEC URL: {source.get('hec_url', 'Not specified')}")
                     print(f"  Batch Size: {source.get('batch_size', 'Default')}")

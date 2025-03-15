@@ -7,6 +7,9 @@ import re
 import sys
 import time
 from pathlib import Path
+import psutil
+import threading
+from datetime import datetime
 
 from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import clear
@@ -46,6 +49,8 @@ class CLI:
         self.prompt_style = Style.from_dict({
             'prompt': 'ansicyan bold',
         })
+
+        self.old_terminal_settings = None
     
     def start(self):
         """Start CLI interface."""
@@ -781,73 +786,240 @@ class CLI:
         return
     
     def _view_status(self):
-        """View system and sources status."""
+        """View system and sources status in real-time until key press."""
         clear()
         self._print_header()
-        print(f"{Fore.CYAN}=== System Status ==={ColorStyle.RESET_ALL}")
+        print(f"{Fore.CYAN}=== Live System Status ==={ColorStyle.RESET_ALL}")
+        print(f"{Fore.YELLOW}Press any key to return to main menu...{ColorStyle.RESET_ALL}")
         
-        # System information
-        import psutil
-        import threading
+        # Function to format timestamp
+        def format_timestamp(timestamp):
+            if timestamp is None:
+                return "Never"
+            return timestamp.strftime("%Y-%m-%d %H:%M:%S")
         
-        # CPU and memory
-        cpu_percent = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
+        # Function to generate bar graph
+        def get_bar(percentage, width=20):
+            filled_width = int(width * percentage / 100)
+            bar = '█' * filled_width + '░' * (width - filled_width)
+            return bar
         
-        print(f"\nSystem Resources:")
-        print(f"CPU Usage: {cpu_percent}%")
-        print(f"Memory Usage: {memory.percent}% ({memory.used / (1024**3):.2f} GB / {memory.total / (1024**3):.2f} GB)")
+        # Function to format bytes to human-readable format
+        def format_bytes(bytes_value):
+            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                if bytes_value < 1024.0:
+                    return f"{bytes_value:.2f} {unit}"
+                bytes_value /= 1024.0
+            return f"{bytes_value:.2f} PB"
         
-        # Thread information
-        thread_count = threading.active_count()
-        print(f"Active Threads: {thread_count}")
+        # Main status display loop
+        running = True
+        refresh_interval = 1.0  # Refresh every second
+        update_count = 0
         
-        # Sources information
-        sources = self.source_manager.get_sources()
-        
-        if sources:
-            print(f"\n{Fore.CYAN}Active Sources:{ColorStyle.RESET_ALL}")
-            for source_id, source in sources.items():
-                # Get queue size if available
-                queue_size = 0
-                if source_id in self.processor_manager.queues:
-                    queue_size = self.processor_manager.queues[source_id].qsize()
+        try:
+            # Setup terminal for non-blocking input
+            self._setup_terminal()
+            
+            while running:
+                # Get current timestamp
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Count active processors
-                active_processors = sum(1 for p_id, p_thread in self.processor_manager.processors.items()
-                                      if p_id.startswith(f"{source_id}:") and p_thread.is_alive())
+                # Get system information
+                cpu_percent = psutil.cpu_percent(interval=0.5)
+                memory = psutil.virtual_memory()
+                disk = psutil.disk_usage('/')
+                net_io = psutil.net_io_counters()
                 
-                # Check if listener is active
-                listener_port = source["listener_port"]
-                listener_protocol = source["protocol"]
-                listener_key = f"{listener_protocol}:{listener_port}"
-                listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
+                # Thread information
+                thread_count = threading.active_count()
                 
-                print(f"\nSource: {source['source_name']}")
-                print(f"  - IP: {source['source_ip']}")
-                print(f"  - Port: {source['listener_port']} ({source['protocol']})")
-                print(f"  - Target: {source['target_type']}")
-                print(f"  - Queue Size: {queue_size}")
-                print(f"  - Active Processors: {active_processors}")
-                print(f"  - Listener Active: {listener_active}")
-        else:
-            print(f"\n{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
+                # Get processor metrics
+                metrics = self.processor_manager.get_metrics()
+                processed_logs_count = metrics["processed_logs_count"]
+                last_processed_timestamp = metrics["last_processed_timestamp"]
+                
+                # Get sources information
+                sources = self.source_manager.get_sources()
+                
+                # Move cursor to beginning and clear screen
+                print("\033[H\033[J", end="")
+                
+                # Print header
+                self._print_header()
+                print(f"{Fore.CYAN}=== Live System Status ==={ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}Press any key to return to main menu...{ColorStyle.RESET_ALL}")
+                print(f"\nLast updated: {current_time} (refresh #{update_count})")
+                
+                # System Resources
+                print(f"\n{Fore.CYAN}System Resources:{ColorStyle.RESET_ALL}")
+                
+                # CPU
+                cpu_bar = get_bar(cpu_percent)
+                print(f"CPU Usage:    {cpu_bar} {cpu_percent}%")
+                
+                # Memory
+                mem_bar = get_bar(memory.percent)
+                print(f"Memory Usage: {mem_bar} {memory.percent}% ({format_bytes(memory.used)} / {format_bytes(memory.total)})")
+                
+                # Disk
+                disk_bar = get_bar(disk.percent)
+                print(f"Disk Usage:   {disk_bar} {disk.percent}% ({format_bytes(disk.used)} / {format_bytes(disk.total)})")
+                
+                # Network
+                print(f"Network:      ↑ {format_bytes(net_io.bytes_sent)} sent | ↓ {format_bytes(net_io.bytes_recv)} received")
+                
+                # Thread count
+                print(f"Active Threads: {thread_count}")
+                
+                # Health check status
+                print(f"\n{Fore.CYAN}Health Check Status:{ColorStyle.RESET_ALL}")
+                is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
+                is_running = is_configured and self.health_check.running
+                
+                if is_configured:
+                    print(f"  Status: {'Running' if is_running else 'Stopped'}")
+                    if is_running:
+                        print(f"  Interval: {self.health_check.config['interval']} seconds")
+                else:
+                    print(f"  Not Configured")
+                
+                # Sources information
+                if sources:
+                    print(f"\n{Fore.CYAN}Active Sources:{ColorStyle.RESET_ALL}")
+                    
+                    # Create a table header
+                    header = f"{'Source Name':<25} {'Status':<10} {'Queue':<10} {'Threads':<10} {'Processed Logs':<15} {'Last Activity':<20}"
+                    print(f"\n{Fore.GREEN}{header}{ColorStyle.RESET_ALL}")
+                    print("-" * len(header))
+                    
+                    for source_id, source in sources.items():
+                        # Get queue size if available
+                        queue_size = 0
+                        if source_id in self.processor_manager.queues:
+                            queue_size = self.processor_manager.queues[source_id].qsize()
+                        
+                        # Count active processors
+                        active_processors = sum(1 for p_id, p_thread in self.processor_manager.processors.items()
+                                              if p_id.startswith(f"{source_id}:") and p_thread.is_alive())
+                        
+                        # Check if listener is active
+                        listener_port = source["listener_port"]
+                        listener_protocol = source["protocol"]
+                        listener_key = f"{listener_protocol}:{listener_port}"
+                        listener_active = listener_key in self.listener_manager.listeners and self.listener_manager.listeners[listener_key].is_alive()
+                        
+                        # Get processed logs count
+                        processed_count = processed_logs_count.get(source_id, 0)
+                        
+                        # Get last processed timestamp
+                        last_timestamp = last_processed_timestamp.get(source_id)
+                        last_activity = format_timestamp(last_timestamp)
+                        
+                        # Determine status color
+                        status_color = Fore.GREEN if listener_active else Fore.RED
+                        status_text = "Active" if listener_active else "Inactive"
+                        
+                        # Print source info as a table row
+                        source_name = source['source_name'][:23] + '..' if len(source['source_name']) > 25 else source['source_name']
+                        print(f"{source_name:<25} {status_color}{status_text:<10}{ColorStyle.RESET_ALL} {queue_size:<10} {active_processors:<10} {processed_count:<15} {last_activity:<20}")
+                    
+                    # More detailed source information
+                    print(f"\n{Fore.CYAN}Source Details:{ColorStyle.RESET_ALL}")
+                    for source_id, source in sources.items():
+                        print(f"\n{Fore.YELLOW}{source['source_name']}{ColorStyle.RESET_ALL}")
+                        print(f"  IP: {source['source_ip']}")
+                        print(f"  Port: {source['listener_port']} ({source['protocol']})")
+                        print(f"  Target: {source['target_type']}")
+                        if source['target_type'] == 'FOLDER':
+                            print(f"  Folder Path: {source.get('folder_path', 'Not specified')}")
+                        elif source['target_type'] == 'HEC':
+                            print(f"  HEC URL: {source.get('hec_url', 'Not specified')}")
+                        print(f"  Batch Size: {source.get('batch_size', 'Default')}")
+                else:
+                    print(f"\n{Fore.YELLOW}No sources configured.{ColorStyle.RESET_ALL}")
+                
+                # Check for keypress
+                if self._is_key_pressed():
+                    self._read_key()  # Consume the keypress
+                    running = False
+                    break
+                
+                # Increment update counter
+                update_count += 1
+                
+                # Sleep for refresh interval
+                time.sleep(refresh_interval)
         
-        # Health check status
-        print(f"\n{Fore.CYAN}Health Check Status:{ColorStyle.RESET_ALL}")
-        is_configured = hasattr(self.health_check, 'config') and self.health_check.config is not None
-        is_running = is_configured and self.health_check.running
+        except KeyboardInterrupt:
+            # Handle Ctrl+C gracefully
+            pass
+        except Exception as e:
+            print(f"{Fore.RED}Error in status view: {e}{ColorStyle.RESET_ALL}")
+        finally:
+            # Always restore terminal settings
+            self._restore_terminal()
         
-        if is_configured:
-            print(f"  - Configured: Yes")
-            print(f"  - Status: {'Running' if is_running else 'Stopped'}")
-            print(f"  - Interval: {self.health_check.config['interval']} seconds")
-        else:
-            print(f"  - Configured: No")
-        
-        print(f"\n{Fore.CYAN}Press Enter to return to the main menu...{ColorStyle.RESET_ALL}")
-        input()  # Wait for user input before returning to main menu
+        # Clear screen once more before returning to menu
+        clear()
+        time.sleep(0.5)  # Brief pause before returning to menu
 
+    def _setup_terminal(self):
+        """Setup terminal for non-blocking input."""
+        try:
+            if os.name == 'posix':
+                import termios
+                import tty
+                # Save current terminal settings
+                self.old_terminal_settings = termios.tcgetattr(sys.stdin)
+                # Set terminal to raw mode
+                tty.setraw(sys.stdin.fileno(), termios.TCSANOW)
+                return True
+            elif os.name == 'nt':
+                # No special setup needed for Windows
+                return True
+        except Exception as e:
+            logger.error(f"Error setting up terminal: {e}")
+        return False
+    
+    def _restore_terminal(self):
+        """Restore terminal settings."""
+        try:
+            if os.name == 'posix' and self.old_terminal_settings:
+                import termios
+                # Restore terminal settings
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+        except Exception as e:
+            logger.error(f"Error restoring terminal: {e}")
+    
+    def _is_key_pressed(self):
+        """Check if a key is pressed without blocking."""
+        try:
+            if os.name == 'posix':
+                import select
+                return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
+            elif os.name == 'nt':
+                import msvcrt
+                return msvcrt.kbhit()
+        except Exception:
+            # Fallback
+            return False
+        return False
+    
+    def _read_key(self):
+        """Read a key press."""
+        try:
+            if os.name == 'posix':
+                return sys.stdin.read(1)
+            elif os.name == 'nt':
+                import msvcrt
+                if msvcrt.kbhit():
+                    return msvcrt.getch().decode('utf-8', errors='ignore')
+        except Exception:
+            # Fallback
+            pass
+        return ''
+    
     def _exit_application(self):
         """Exit the application cleanly."""
         print(f"\n{Fore.YELLOW}Are you sure you want to exit?{ColorStyle.RESET_ALL}")
@@ -864,6 +1036,9 @@ class CLI:
     def _clean_exit(self):
         """Clean up resources before exiting."""
         print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
+        
+        # Restore terminal settings
+        self._restore_terminal()
         
         # Stop health check if running
         if hasattr(self.health_check, 'running') and self.health_check.running:

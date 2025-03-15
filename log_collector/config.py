@@ -25,6 +25,8 @@ DEFAULT_HEC_BATCH_SIZE = 500
 DEFAULT_FOLDER_BATCH_SIZE = 5000
 DEFAULT_HEALTH_CHECK_INTERVAL = 60  # seconds
 DEFAULT_QUEUE_LIMIT = 10000  # logs per queue before spawning new thread
+DEFAULT_COMPRESSION_ENABLED = True  # Default to enabling compression for folder targets
+DEFAULT_COMPRESSION_LEVEL = 9  # Default compression level (9 is highest)
 
 # Configure logging
 logging.basicConfig(

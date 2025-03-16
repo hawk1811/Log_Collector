@@ -4,7 +4,9 @@ Provides real-time monitoring of system resources and log collection activity.
 """
 import time
 import threading
+import platform
 import psutil
+import os
 from datetime import datetime
 from prompt_toolkit.shortcuts import clear
 from colorama import Fore, Style as ColorStyle
@@ -28,10 +30,8 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
         listener_manager: Listener manager instance
         health_check: Health check instance
     """
-    clear()
-    print_header()
-    print(f"{Fore.CYAN}=== Live System Status ==={ColorStyle.RESET_ALL}")
-    print(f"{Fore.YELLOW}Press any key to return to main menu...{ColorStyle.RESET_ALL}")
+    # Detect platform for platform-specific display adjustments
+    is_windows = platform.system() == "Windows"
     
     # Main status display loop
     running = True
@@ -44,6 +44,9 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
         old_settings = setup_terminal()
         
         while running:
+            # Clear screen in a platform-compatible way
+            clear()
+            
             # Get current timestamp
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
@@ -64,9 +67,6 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
             # Get sources information
             sources = source_manager.get_sources()
             
-            # Move cursor to beginning and clear screen
-            print("\033[H\033[J", end="")
-            
             # Print header
             print_header()
             print(f"{Fore.CYAN}=== Live System Status ==={ColorStyle.RESET_ALL}")
@@ -78,17 +78,17 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
             
             # CPU
             cpu_bar = get_bar(cpu_percent)
-            print(f"CPU Usage:    {cpu_bar} {cpu_percent}%")
+            print(f"CPU Usage:    {cpu_bar} {cpu_percent:.1f}%")
             
             # Memory
             mem_bar = get_bar(memory.percent)
-            print(f"Memory Usage: {mem_bar} {memory.percent}% ({format_bytes(memory.used)} / {format_bytes(memory.total)})")
+            print(f"Memory Usage: {mem_bar} {memory.percent:.1f}% ({format_bytes(memory.used)} / {format_bytes(memory.total)})")
             
             # Disk
             disk_bar = get_bar(disk.percent)
-            print(f"Disk Usage:   {disk_bar} {disk.percent}% ({format_bytes(disk.used)} / {format_bytes(disk.total)})")
+            print(f"Disk Usage:   {disk_bar} {disk.percent:.1f}% ({format_bytes(disk.used)} / {format_bytes(disk.total)})")
             
-            # Network
+            # Network (with better formatting)
             print(f"Network:      ↑ {format_bytes(net_io.bytes_sent)} sent | ↓ {format_bytes(net_io.bytes_recv)} received")
             
             # Thread count
@@ -111,9 +111,8 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                 print(f"\n{Fore.CYAN}Active Sources:{ColorStyle.RESET_ALL}")
                 
                 # Create a table header
-                header = f"{'Source Name':<25} {'Status':<10} {'Queue':<10} {'Threads':<10} {'Processed Logs':<15} {'Last Activity':<20}"
-                print(f"\n{Fore.GREEN}{header}{ColorStyle.RESET_ALL}")
-                print("-" * len(header))
+                print("\n" + format_table_row("Source Name", "Status", "Queue", "Threads", "Processed Logs", "Last Activity", header=True))
+                print("-" * 100)  # Fixed width separator
                 
                 for source_id, source in sources.items():
                     # Get queue size if available
@@ -139,12 +138,23 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                     last_activity = format_timestamp(last_timestamp)
                     
                     # Determine status color
-                    status_color = Fore.GREEN if listener_active else Fore.RED
                     status_text = "Active" if listener_active else "Inactive"
+                    status_display = f"{Fore.GREEN}{status_text}{ColorStyle.RESET_ALL}" if listener_active else f"{Fore.RED}{status_text}{ColorStyle.RESET_ALL}"
                     
                     # Print source info as a table row
-                    source_name = source['source_name'][:23] + '..' if len(source['source_name']) > 25 else source['source_name']
-                    print(f"{source_name:<25} {status_color}{status_text:<10}{ColorStyle.RESET_ALL} {queue_size:<10} {active_processors:<10} {processed_count:<15} {last_activity:<20}")
+                    source_name = source['source_name']
+                    if len(source_name) > 20:
+                        source_name = source_name[:18] + '..'
+                    
+                    # Print formatted row
+                    print(format_table_row(
+                        source_name, 
+                        status_display, 
+                        str(queue_size), 
+                        str(active_processors), 
+                        str(processed_count), 
+                        last_activity
+                    ))
                 
                 # More detailed source information
                 print(f"\n{Fore.CYAN}Source Details:{ColorStyle.RESET_ALL}")
@@ -195,6 +205,37 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
     # Clear screen once more before returning to menu
     clear()
     time.sleep(0.5)  # Brief pause before returning to menu
+
+def format_table_row(col1, col2, col3, col4, col5, col6, header=False):
+    """Format a table row with consistent spacing, handling color codes.
+    
+    Args:
+        col1-col6: Column content
+        header: Whether this is a header row
+        
+    Returns:
+        str: Formatted row
+    """
+    # For columns with color codes, we need to account for invisible characters
+    # when calculating display width
+    
+    # For the status column which contains color codes
+    if not header and Fore.GREEN in col2 or Fore.RED in col2:
+        # We need to handle the invisible color codes for proper alignment
+        status_text = "Active" if "Active" in col2 else "Inactive"
+        col2_display_width = len(status_text)
+    else:
+        col2_display_width = len(col2)
+    
+    # Define column widths
+    col_widths = [20, 10, 10, 10, 15, 20]
+    
+    # Create the formatted row
+    if header:
+        return f"{Fore.GREEN}{col1:<{col_widths[0]}} {col2:<{col_widths[1]}} {col3:<{col_widths[2]}} {col4:<{col_widths[3]}} {col5:<{col_widths[4]}} {col6:<{col_widths[5]}}{ColorStyle.RESET_ALL}"
+    else:
+        # For non-header rows, handle status column specially
+        return f"{col1:<{col_widths[0]}} {col2} {col3:>{col_widths[2]-2}} {col4:>{col_widths[3]-2}} {col5:>{col_widths[4]-2}} {col6:<{col_widths[5]}}"
 
 def print_header():
     """Print application header."""

@@ -13,7 +13,11 @@ setup(
     entry_points={
         "console_scripts": [
             "log_collector=log_collector.main:main",
+            "log_collector_service=log_collector.service:main",
         ],
+    },
+    extras_require={
+        "windows_service": ["pywin32>=228"],
     },
     python_requires=">=3.7",
     author="K.G - The Hawk",

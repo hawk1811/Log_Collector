@@ -1,122 +1,167 @@
 """
-Utility functions for Log Collector.
+Command Line Interface utility functions for Log Collector.
+Contains terminal handling, formatting, and other helper functions.
 """
 import os
 import sys
-import time
-import json
-import socket
-import hashlib
-from datetime import datetime
-from pathlib import Path
-
+import platform
+from colorama import Fore, Style as ColorStyle, init
 from log_collector.config import logger
 
-def get_version():
-    """Get application version."""
-    return "1.0.0"
+# Force colorama to initialize with strip=False for Linux terminals
+init(strip=False)
 
-def is_port_available(port, host="0.0.0.0"):
-    """Check if a port is available for binding.
+def setup_terminal():
+    """Setup terminal for non-blocking input.
     
-    Args:
-        port: Port number to check
-        host: Host to bind to (default: 0.0.0.0)
-        
     Returns:
-        bool: True if port is available, False otherwise
+        Terminal settings to be used for restoration later, or None if N/A
     """
     try:
-        # Try to create a socket and bind to it
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((host, port))
-        sock.close()
-        return True
-    except:
-        return False
+        if os.name == 'posix':
+            import termios
+            import tty
+            # Save current terminal settings
+            old_settings = termios.tcgetattr(sys.stdin)
+            # Set terminal to raw mode
+            tty.setraw(sys.stdin.fileno(), termios.TCSANOW)
+            return old_settings
+        elif os.name == 'nt':
+            # No special setup needed for Windows
+            return None
+    except Exception as e:
+        logger.error(f"Error setting up terminal: {e}")
+    return None
 
-def format_timestamp(timestamp=None):
-    """Format timestamp for filenames.
+def restore_terminal(old_settings):
+    """Restore terminal settings.
     
     Args:
-        timestamp: Unix timestamp or None for current time
+        old_settings: Terminal settings to restore
+    """
+    try:
+        if os.name == 'posix' and old_settings:
+            import termios
+            # Restore terminal settings
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+    except Exception as e:
+        logger.error(f"Error restoring terminal: {e}")
+
+def is_key_pressed():
+    """Check if a key is pressed without blocking.
+    
+    Returns:
+        bool: True if key pressed, False otherwise
+    """
+    try:
+        if os.name == 'posix':
+            import select
+            return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
+        elif os.name == 'nt':
+            import msvcrt
+            return msvcrt.kbhit()
+    except Exception:
+        # Fallback
+        return False
+    return False
+
+def read_key():
+    """Read a key press.
+    
+    Returns:
+        str: Key pressed or empty string
+    """
+    try:
+        if os.name == 'posix':
+            return sys.stdin.read(1)
+        elif os.name == 'nt':
+            import msvcrt
+            if msvcrt.kbhit():
+                return msvcrt.getch().decode('utf-8', errors='ignore')
+    except Exception:
+        # Fallback
+        pass
+    return ''
+
+def format_timestamp(timestamp):
+    """Format timestamp for display.
+    
+    Args:
+        timestamp: Timestamp to format, or None
         
     Returns:
-        str: Formatted timestamp (YYYY-MM-DD-HH-MM-SS)
+        str: Formatted timestamp string
     """
     if timestamp is None:
-        timestamp = time.time()
-    
-    dt = datetime.fromtimestamp(timestamp)
-    return dt.strftime("%Y-%m-%d-%H-%M-%S")
+        return "Never"
+    return timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
-def get_file_hash(file_path):
-    """Calculate SHA256 hash of a file.
+def get_bar(percentage, width=20):
+    """Generate a visual bar representation of a percentage.
     
     Args:
-        file_path: Path to file
+        percentage: Percentage value (0-100)
+        width: Width of the bar in characters
         
     Returns:
-        str: SHA256 hash hexdigest or None if error
+        str: Visual bar
+    """
+    # Use more compatible characters that render well across platforms
+    if platform.system() == "Windows":
+        filled_char = '█'
+        empty_char = '░'
+    else:
+        filled_char = '▓'  # More compatible filled block
+        empty_char = '░'   # More compatible empty block
+    
+    filled_width = int(width * percentage / 100)
+    bar = filled_char * filled_width + empty_char * (width - filled_width)
+    return bar
+
+def format_bytes(bytes_value):
+    """Format bytes into human-readable format.
+    
+    Args:
+        bytes_value: Value in bytes
+        
+    Returns:
+        str: Formatted string with appropriate unit
+    """
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if bytes_value < 1024.0:
+            return f"{bytes_value:.2f} {unit}"
+        bytes_value /= 1024.0
+    return f"{bytes_value:.2f} PB"
+
+def strip_ansi(text):
+    """Remove ANSI color codes from text.
+    
+    Args:
+        text: Text containing ANSI color codes
+        
+    Returns:
+        str: Text without ANSI color codes
+    """
+    import re
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+def get_terminal_size():
+    """Get terminal size in a cross-platform way.
+    
+    Returns:
+        tuple: (width, height) of terminal
     """
     try:
-        sha256 = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for block in iter(lambda: f.read(65536), b""):
-                sha256.update(block)
-        return sha256.hexdigest()
-    except Exception as e:
-        logger.error(f"Error calculating file hash: {e}")
-        return None
-
-def safe_json_loads(json_str, default=None):
-    """Safely parse JSON string.
-    
-    Args:
-        json_str: JSON string to parse
-        default: Default value to return if parsing fails
-        
-    Returns:
-        Parsed JSON object or default value
-    """
-    try:
-        return json.loads(json_str)
-    except (json.JSONDecodeError, TypeError):
-        return default if default is not None else {}
-
-def human_readable_size(size_bytes):
-    """Convert size in bytes to human-readable format.
-    
-    Args:
-        size_bytes: Size in bytes
-        
-    Returns:
-        str: Human-readable size string
-    """
-    if size_bytes == 0:
-        return "0 B"
-    
-    size_names = ["B", "KB", "MB", "GB", "TB", "PB"]
-    i = 0
-    while size_bytes >= 1024 and i < len(size_names) - 1:
-        size_bytes /= 1024
-        i += 1
-    
-    return f"{size_bytes:.2f} {size_names[i]}"
-
-def create_dir_if_not_exists(directory):
-    """Create directory if it doesn't exist.
-    
-    Args:
-        directory: Directory path to create
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-        os.makedirs(directory, exist_ok=True)
-        return True
-    except Exception as e:
-        logger.error(f"Error creating directory {directory}: {e}")
-        return False
+        # Try to get size from os module (works in most environments)
+        columns, lines = os.get_terminal_size()
+        return columns, lines
+    except (AttributeError, OSError):
+        # Fallback for older Python versions or unusual environments
+        try:
+            import shutil
+            columns, lines = shutil.get_terminal_size()
+            return columns, lines
+        except (ImportError, AttributeError):
+            # Final fallback: use standard sizes
+            return 80, 24

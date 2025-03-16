@@ -1,12 +1,10 @@
 """
 Status dashboard module for Log Collector.
-Provides real-time monitoring of system resources, log collection activity, and service status.
+Provides real-time monitoring of system resources and log collection activity.
 """
 import time
 import threading
 import psutil
-import os
-import json
 from datetime import datetime
 from prompt_toolkit.shortcuts import clear
 from colorama import Fore, Style as ColorStyle
@@ -20,7 +18,6 @@ from log_collector.cli_utils import (
     get_bar,
     format_bytes
 )
-from log_collector.config import DATA_DIR
 
 def view_status(source_manager, processor_manager, listener_manager, health_check):
     """View system and sources status in real-time until key press.
@@ -67,9 +64,6 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
             # Get sources information
             sources = source_manager.get_sources()
             
-            # Get service status information
-            service_status = get_service_status()
-            
             # Move cursor to beginning and clear screen
             print("\033[H\033[J", end="")
             
@@ -78,19 +72,6 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
             print(f"{Fore.CYAN}=== Live System Status ==={ColorStyle.RESET_ALL}")
             print(f"{Fore.YELLOW}Press any key to return to main menu...{ColorStyle.RESET_ALL}")
             print(f"\nLast updated: {current_time} (refresh #{update_count})")
-            
-            # Service Status
-            print(f"\n{Fore.CYAN}Service Status:{ColorStyle.RESET_ALL}")
-            if service_status["running"]:
-                print(f"Status: {Fore.GREEN}Running{ColorStyle.RESET_ALL} (PID: {service_status.get('pid', 'Unknown')})")
-                print(f"Uptime: {format_uptime(service_status.get('start_time', time.time()))}")
-                print(f"Listener: {'Running' if service_status.get('listener_running', False) else 'Stopped'}")
-                print(f"Processor: {'Running' if service_status.get('processor_running', False) else 'Stopped'}")
-                print(f"Last Status Update: {datetime.fromtimestamp(service_status.get('timestamp', 0)).strftime('%Y-%m-%d %H:%M:%S')}")
-            else:
-                print(f"Status: {Fore.RED}Not Running{ColorStyle.RESET_ALL}")
-                print("The service must be running to collect logs.")
-                print("You can start it from the Service Management menu.")
             
             # System Resources
             print(f"\n{Fore.CYAN}System Resources:{ColorStyle.RESET_ALL}")
@@ -130,13 +111,25 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                 print(f"\n{Fore.CYAN}Active Sources:{ColorStyle.RESET_ALL}")
                 
                 # Create a table header
-                header = f"{'Source Name':<25} {'Type':<10} {'Protocol':<8} {'Port':<6} {'Processed Logs':<15} {'Last Activity':<20}"
+                header = f"{'Source Name':<25} {'Status':<10} {'Queue':<10} {'Threads':<10} {'Processed Logs':<15} {'Last Activity':<20}"
                 print(f"\n{Fore.GREEN}{header}{ColorStyle.RESET_ALL}")
                 print("-" * len(header))
                 
                 for source_id, source in sources.items():
-                    # Determine source status based on service status
-                    status_active = service_status["running"] and service_status.get("listener_running", False)
+                    # Get queue size if available
+                    queue_size = 0
+                    if source_id in processor_manager.queues:
+                        queue_size = processor_manager.queues[source_id].qsize()
+                    
+                    # Count active processors
+                    active_processors = sum(1 for p_id, p_thread in processor_manager.processors.items()
+                                          if p_id.startswith(f"{source_id}:") and p_thread.is_alive())
+                    
+                    # Check if listener is active
+                    listener_port = source["listener_port"]
+                    listener_protocol = source["protocol"]
+                    listener_key = f"{listener_protocol}:{listener_port}"
+                    listener_active = listener_key in listener_manager.listeners and listener_manager.listeners[listener_key].is_alive()
                     
                     # Get processed logs count
                     processed_count = processed_logs_count.get(source_id, 0)
@@ -145,13 +138,13 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                     last_timestamp = last_processed_timestamp.get(source_id)
                     last_activity = format_timestamp(last_timestamp)
                     
-                    # Source information
-                    source_name = source['source_name'][:23] + '..' if len(source['source_name']) > 25 else source['source_name']
-                    target_type = source['target_type']
-                    protocol = source['protocol']
-                    port = source['listener_port']
+                    # Determine status color
+                    status_color = Fore.GREEN if listener_active else Fore.RED
+                    status_text = "Active" if listener_active else "Inactive"
                     
-                    print(f"{source_name:<25} {target_type:<10} {protocol:<8} {port:<6} {processed_count:<15} {last_activity:<20}")
+                    # Print source info as a table row
+                    source_name = source['source_name'][:23] + '..' if len(source['source_name']) > 25 else source['source_name']
+                    print(f"{source_name:<25} {status_color}{status_text:<10}{ColorStyle.RESET_ALL} {queue_size:<10} {active_processors:<10} {processed_count:<15} {last_activity:<20}")
                 
                 # More detailed source information
                 print(f"\n{Fore.CYAN}Source Details:{ColorStyle.RESET_ALL}")
@@ -202,89 +195,6 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
     # Clear screen once more before returning to menu
     clear()
     time.sleep(0.5)  # Brief pause before returning to menu
-
-def get_service_status():
-    """Get current service status."""
-    # Default status (not running)
-    status = {
-        "running": False,
-        "sources_count": 0,
-        "processor_running": False,
-        "listener_running": False,
-        "health_check_running": False,
-        "timestamp": time.time(),
-        "pid": None,
-        "start_time": None
-    }
-    
-    # Check if PID file exists
-    pid_file = DATA_DIR / "logcollector.pid"
-    if not pid_file.exists():
-        return status
-    
-    # Read PID
-    try:
-        with open(pid_file, "r") as f:
-            pid = int(f.read().strip())
-        
-        # Check if process is running
-        try:
-            os.kill(pid, 0)  # This raises an exception if process doesn't exist
-            status["running"] = True
-            status["pid"] = pid
-            
-            # Get process start time
-            try:
-                process = psutil.Process(pid)
-                status["start_time"] = process.create_time()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        except OSError:
-            # Process not running
-            return status
-        
-        # Read status file if available
-        status_file = DATA_DIR / "service_status.json"
-        if status_file.exists():
-            try:
-                with open(status_file, "r") as f:
-                    file_status = json.load(f)
-                
-                # Update status with file information
-                status.update(file_status)
-            except:
-                # Failed to read status file
-                pass
-    
-    except (ValueError, IOError):
-        # Invalid PID file
-        pass
-    
-    return status
-
-def format_uptime(start_time):
-    """Format uptime from start timestamp."""
-    if not start_time:
-        return "Unknown"
-    
-    uptime_seconds = time.time() - start_time
-    
-    # Calculate days, hours, minutes, seconds
-    days, remainder = divmod(uptime_seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    
-    # Format string
-    components = []
-    if days > 0:
-        components.append(f"{int(days)}d")
-    if hours > 0 or days > 0:
-        components.append(f"{int(hours)}h")
-    if minutes > 0 or hours > 0 or days > 0:
-        components.append(f"{int(minutes)}m")
-    components.append(f"{int(seconds)}s")
-    
-    return " ".join(components)
 
 def print_header():
     """Print application header."""

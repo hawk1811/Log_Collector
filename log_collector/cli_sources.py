@@ -484,6 +484,11 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli, agg
             input("Press Enter to return to main menu...")
             return
         
+        # Try to auto-save templates for all sources
+        if aggregation_manager:
+            for source_id in sources:
+                aggregation_manager.ensure_template(source_id, processor_manager)
+        
         print("\nConfigured Sources:")
         for i, (source_id, source) in enumerate(sources.items(), 1):
             print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']})")

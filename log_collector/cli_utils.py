@@ -21,11 +21,9 @@ def setup_terminal():
     try:
         if os.name == 'posix':
             import termios
-            import tty
-            # Save current terminal settings
+            # Save current terminal settings but don't modify them
             old_settings = termios.tcgetattr(sys.stdin)
-            # Set terminal to cbreak mode instead of raw mode for better compatibility
-            tty.setcbreak(sys.stdin.fileno())
+            # We won't set raw mode here to preserve normal terminal behavior
             return old_settings
         elif os.name == 'nt':
             # No special setup needed for Windows

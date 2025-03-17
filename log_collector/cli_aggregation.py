@@ -94,7 +94,11 @@ def create_aggregation_rule(source_manager, processor_manager, aggregation_manag
     # Show available sources
     print("\nAvailable Sources:")
     for i, (source_id, source) in enumerate(available_sources.items(), 1):
-        print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']})")
+        # Try to auto-save template
+        has_template = aggregation_manager.ensure_template(source_id, processor_manager)
+        template_status = " (Sample log available)" if has_template else ""
+            
+        print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']}){template_status}")
     
     print("\n0. Cancel")
     

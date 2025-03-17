@@ -25,7 +25,7 @@ from log_collector.cli_status import view_status
 class CLI:
     """Command Line Interface for Log Collector."""
     
-    def __init__(self, source_manager, processor_manager, listener_manager, health_check):
+    def __init__(self, source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None):
         """Initialize CLI.
         
         Args:
@@ -33,11 +33,13 @@ class CLI:
             processor_manager: Instance of ProcessorManager
             listener_manager: Instance of LogListener
             health_check: Instance of HealthCheck
+            aggregation_manager: Optional instance of AggregationManager
         """
         self.source_manager = source_manager
         self.processor_manager = processor_manager
         self.listener_manager = listener_manager
         self.health_check = health_check
+        self.aggregation_manager = aggregation_manager
         
         # Define prompt style
         self.prompt_style = Style.from_dict({
@@ -130,7 +132,7 @@ class CLI:
         if choice == "1":
             add_source(self.source_manager, self.processor_manager, self.listener_manager, self)
         elif choice == "2":
-            manage_sources(self.source_manager, self.processor_manager, self.listener_manager, self)
+            manage_sources(self.source_manager, self.processor_manager, self.listener_manager, self, self.aggregation_manager)
         elif choice == "3":
             configure_health_check(self.health_check, self)
         elif choice == "4":

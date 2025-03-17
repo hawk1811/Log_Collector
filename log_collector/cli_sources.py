@@ -463,7 +463,7 @@ def delete_source(source_id, source_manager, processor_manager, listener_manager
     
     input("Press Enter to continue...")
 
-def manage_sources(source_manager, processor_manager, listener_manager, cli):
+def manage_sources(source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
     """Manage existing sources.
     
     Args:
@@ -471,6 +471,7 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli):
         processor_manager: Processor manager instance
         listener_manager: Listener manager instance
         cli: CLI instance for style and header
+        aggregation_manager: Optional aggregation manager instance
     """
     while True:
         clear()
@@ -491,6 +492,10 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli):
         print("0. Return to Main Menu")
         print("1-N. Select Source to Manage")
         
+        if aggregation_manager:
+            print("\nOr select:")
+            print("A. Manage Aggregation Rules")
+        
         choice = prompt(
             HTML("<ansicyan>Choose an option: </ansicyan>"),
             style=cli.prompt_style
@@ -498,71 +503,18 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli):
         
         if choice == "0":
             return
-        
-        try:
-            index = int(choice) - 1
-            if 0 <= index < len(sources):
-                source_id = list(sources.keys())[index]
-                manage_source(source_id, source_manager, processor_manager, listener_manager, cli)
-            else:
+        elif choice.upper() == "A" and aggregation_manager:
+            from log_collector.cli_aggregation import manage_aggregation_rules
+            manage_aggregation_rules(source_manager, processor_manager, aggregation_manager, cli)
+        else:
+            try:
+                index = int(choice) - 1
+                if 0 <= index < len(sources):
+                    source_id = list(sources.keys())[index]
+                    manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager)
+                else:
+                    print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                    input("Press Enter to continue...")
+            except ValueError:
                 print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
-        except ValueError:
-            print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")
-
-def manage_source(source_id, source_manager, processor_manager, listener_manager, cli):
-    """Manage a specific source.
-    
-    Args:
-        source_id: ID of the source to manage
-        source_manager: Source manager instance
-        processor_manager: Processor manager instance
-        listener_manager: Listener manager instance
-        cli: CLI instance for style and header
-    """
-    while True:
-        clear()
-        cli._print_header()
-        source = source_manager.get_source(source_id)
-        if not source:
-            print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")
-            return
-        
-        print(f"{Fore.CYAN}=== Manage Source: {source['source_name']} ==={ColorStyle.RESET_ALL}")
-        print(f"\nSource ID: {source_id}")
-        print(f"Source Name: {source['source_name']}")
-        print(f"Source IP: {source['source_ip']}")
-        print(f"Listener Port: {source['listener_port']}")
-        print(f"Protocol: {source['protocol']}")
-        print(f"Target Type: {source['target_type']}")
-        
-        if source['target_type'] == "FOLDER":
-            print(f"Folder Path: {source['folder_path']}")
-        elif source['target_type'] == "HEC":
-            print(f"HEC URL: {source['hec_url']}")
-            print(f"HEC Token: {'*' * 10}")
-        
-        print(f"Batch Size: {source.get('batch_size', 'Default')}")
-        
-        print("\nOptions:")
-        print("1. Edit Source")
-        print("2. Delete Source")
-        print("3. Return to Sources List")
-        
-        choice = prompt(
-            HTML("<ansicyan>Choose an option (1-3): </ansicyan>"),
-            style=cli.prompt_style
-        )
-        
-        if choice == "1":
-            edit_source(source_id, source_manager, processor_manager, listener_manager, cli)
-        elif choice == "2":
-            delete_source(source_id, source_manager, processor_manager, listener_manager)
-            return
-        elif choice == "3":
-            return
-        else:
-            print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")

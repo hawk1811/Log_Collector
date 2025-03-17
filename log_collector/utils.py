@@ -165,3 +165,7 @@ def get_terminal_size():
         except (ImportError, AttributeError):
             # Final fallback: use standard sizes
             return 80, 24
+
+def get_version():
+    """Get application version."""
+    return "1.0.0"

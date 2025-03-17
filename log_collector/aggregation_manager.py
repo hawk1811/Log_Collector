@@ -56,6 +56,37 @@ class AggregationManager:
         except Exception as e:
             logger.error(f"Error saving aggregation policies: {e}")
             return False
+
+    def ensure_template(self, source_id, processor_manager):
+        """Ensure a log template exists for a source, creating one if needed.
+        
+        Args:
+            source_id: Source ID to check
+            processor_manager: Processor manager to get sample logs from
+            
+        Returns:
+            bool: True if template exists or was created, False otherwise
+        """
+        # Check if we already have a template
+        if source_id in self.templates:
+            return True
+        
+        # Try to get a sample log from the queue
+        if source_id in processor_manager.queues and not processor_manager.queues[source_id].empty():
+            try:
+                # Get a copy of the first log without removing it
+                sample_log = list(processor_manager.queues[source_id].queue)[0]
+                
+                # Store it as a template
+                template_fields = self.store_log_template(source_id, sample_log)
+                logger.info(f"Auto-saved sample log template for source {source_id}")
+                
+                return True
+            except Exception as e:
+                logger.error(f"Error auto-saving log template for source {source_id}: {e}")
+                return False
+        
+        return False
     
     def store_log_template(self, source_id, log_content):
         """Store a log template for a source.

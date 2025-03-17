@@ -518,3 +518,84 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli, agg
             except ValueError:
                 print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
+
+def manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
+    """Manage a specific source.
+    
+    Args:
+        source_id: ID of the source to manage
+        source_manager: Source manager instance
+        processor_manager: Processor manager instance
+        listener_manager: Listener manager instance
+        cli: CLI instance for style and header
+        aggregation_manager: Optional aggregation manager instance
+    """
+    while True:
+        clear()
+        cli._print_header()
+        source = source_manager.get_source(source_id)
+        if not source:
+            print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
+            input("Press Enter to continue...")
+            return
+        
+        print(f"{Fore.CYAN}=== Manage Source: {source['source_name']} ==={ColorStyle.RESET_ALL}")
+        print(f"\nSource ID: {source_id}")
+        print(f"Source Name: {source['source_name']}")
+        print(f"Source IP: {source['source_ip']}")
+        print(f"Listener Port: {source['listener_port']}")
+        print(f"Protocol: {source['protocol']}")
+        print(f"Target Type: {source['target_type']}")
+        
+        if source['target_type'] == "FOLDER":
+            print(f"Folder Path: {source['folder_path']}")
+        elif source['target_type'] == "HEC":
+            print(f"HEC URL: {source['hec_url']}")
+            print(f"HEC Token: {'*' * 10}")
+        
+        print(f"Batch Size: {source.get('batch_size', 'Default')}")
+        
+        # Display aggregation status if available
+        if aggregation_manager:
+            policy = aggregation_manager.get_policy(source_id)
+            if policy:
+                status = "Enabled" if policy.get("enabled", True) else "Disabled"
+                fields = ", ".join(policy["fields"])
+                print(f"\nAggregation: {status}")
+                print(f"Fields: {fields}")
+            else:
+                print(f"\nAggregation: Not Configured")
+        
+        print("\nOptions:")
+        print("1. Edit Source")
+        print("2. Delete Source")
+        if aggregation_manager:
+            print("3. Manage Aggregation Rules")
+            print("4. Return to Sources List")
+        else:
+            print("3. Return to Sources List")
+        
+        choice = prompt(
+            HTML("<ansicyan>Choose an option: </ansicyan>"),
+            style=cli.prompt_style
+        )
+        
+        if choice == "1":
+            edit_source(source_id, source_manager, processor_manager, listener_manager, cli)
+        elif choice == "2":
+            delete_source(source_id, source_manager, processor_manager, listener_manager)
+            return
+        elif choice == "3" and aggregation_manager:
+            if policy:
+                # Edit existing rule
+                from log_collector.cli_aggregation import edit_aggregation_rule
+                edit_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
+            else:
+                # Create new rule
+                from log_collector.cli_aggregation import create_aggregation_rule
+                create_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
+        elif (choice == "4" and aggregation_manager) or (choice == "3" and not aggregation_manager):
+            return
+        else:
+            print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+            input("Press Enter to continue...")

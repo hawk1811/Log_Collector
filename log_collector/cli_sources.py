@@ -544,6 +544,10 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
             input("Press Enter to continue...")
             return
         
+        # Auto-save template if not already saved
+        if aggregation_manager:
+            aggregation_manager.ensure_template(source_id, processor_manager)
+        
         print(f"{Fore.CYAN}=== Manage Source: {source['source_name']} ==={ColorStyle.RESET_ALL}")
         print(f"\nSource ID: {source_id}")
         print(f"Source Name: {source['source_name']}")
@@ -563,6 +567,8 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
         # Display aggregation status if available
         if aggregation_manager:
             policy = aggregation_manager.get_policy(source_id)
+            has_template = source_id in aggregation_manager.templates
+            
             if policy:
                 status = "Enabled" if policy.get("enabled", True) else "Disabled"
                 fields = ", ".join(policy["fields"])
@@ -570,6 +576,8 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
                 print(f"Fields: {fields}")
             else:
                 print(f"\nAggregation: Not Configured")
+                if has_template:
+                    print(f"Sample Log: Available for configuration")
         
         print("\nOptions:")
         print("1. Edit Source")

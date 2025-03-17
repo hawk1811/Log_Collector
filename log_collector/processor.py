@@ -25,13 +25,15 @@ MAX_FLUSH_INTERVAL = 60
 class ProcessorManager:
     """Manages log processing queues and worker threads."""
     
-    def __init__(self, source_manager):
+    def __init__(self, source_manager, aggregation_manager=None):
         """Initialize the processor manager.
         
         Args:
             source_manager: Instance of SourceManager to access source configs
+            aggregation_manager: Optional instance of AggregationManager for log aggregation
         """
         self.source_manager = source_manager
+        self.aggregation_manager = aggregation_manager
         self.queues = {}  # source_id -> queue mapping
         self.processors = {}  # source_id -> processor thread mapping
         self.running = False

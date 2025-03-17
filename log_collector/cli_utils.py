@@ -4,8 +4,13 @@ Contains terminal handling, formatting, and other helper functions.
 """
 import os
 import sys
-from colorama import Fore, Style as ColorStyle
+import platform
+import re
+from colorama import Fore, Style as ColorStyle, init
 from log_collector.config import logger
+
+# Force colorama to initialize with specific settings for better Linux compatibility
+init(autoreset=False, strip=False)
 
 def setup_terminal():
     """Setup terminal for non-blocking input.
@@ -19,8 +24,8 @@ def setup_terminal():
             import tty
             # Save current terminal settings
             old_settings = termios.tcgetattr(sys.stdin)
-            # Set terminal to raw mode
-            tty.setraw(sys.stdin.fileno(), termios.TCSANOW)
+            # Set terminal to cbreak mode instead of raw mode for better compatibility
+            tty.setcbreak(sys.stdin.fileno())
             return old_settings
         elif os.name == 'nt':
             # No special setup needed for Windows
@@ -102,8 +107,21 @@ def get_bar(percentage, width=20):
     Returns:
         str: Visual bar
     """
+    # Use simple block characters that work reliably in all Linux terminals
+    is_linux = platform.system() != "Windows"
+    
+    if is_linux:
+        filled_char = '▓'  # This works better on Linux terminals
+        empty_char = '░'
+    else:
+        filled_char = '█'  # Windows has better Unicode support in terminals
+        empty_char = '░'
+    
+    # Ensure percentage is within valid range
+    percentage = max(0, min(100, percentage))
+    
     filled_width = int(width * percentage / 100)
-    bar = '█' * filled_width + '░' * (width - filled_width)
+    bar = filled_char * filled_width + empty_char * (width - filled_width)
     return bar
 
 def format_bytes(bytes_value):
@@ -120,3 +138,47 @@ def format_bytes(bytes_value):
             return f"{bytes_value:.2f} {unit}"
         bytes_value /= 1024.0
     return f"{bytes_value:.2f} PB"
+
+def strip_ansi(text):
+    """Remove ANSI color codes from text.
+    
+    Args:
+        text: Text containing ANSI color codes
+        
+    Returns:
+        str: Text without ANSI color codes
+    """
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+def get_terminal_size():
+    """Get terminal size in a cross-platform way.
+    
+    Returns:
+        tuple: (width, height) of terminal
+    """
+    try:
+        # Try to get size from os module (works in most environments)
+        columns, lines = os.get_terminal_size()
+        return columns, lines
+    except (AttributeError, OSError):
+        # Fallback for older Python versions or unusual environments
+        try:
+            import shutil
+            columns, lines = shutil.get_terminal_size()
+            return columns, lines
+        except (ImportError, AttributeError):
+            # Final fallback: use standard sizes
+            return 80, 24
+
+def calculate_content_width(text):
+    """Calculate the display width of a string considering ANSI codes.
+    
+    Args:
+        text: Text that may contain ANSI color codes
+        
+    Returns:
+        int: Visual display width
+    """
+    # Strip ANSI codes to get true display length
+    return len(strip_ansi(text))

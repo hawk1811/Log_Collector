@@ -179,6 +179,21 @@ class ProcessorManager:
                 # If we need to force flush, process the current batch
                 if force_flush:
                     logger.info(f"Forced flush after {time_since_activity:.1f}s of inactivity for source {source['source_name']} ({len(batch)} logs)")
+                    
+                    # Apply aggregation if enabled
+                    if self.aggregation_manager and batch:
+                        try:
+                            # Use the aggregation manager to aggregate the batch
+                            original_size = len(batch)
+                            batch = self.aggregation_manager.aggregate_batch(batch, source_id)
+                            new_size = len(batch)
+                            
+                            if original_size != new_size:
+                                logger.info(f"Aggregated batch from {original_size} to {new_size} logs for source {source['source_name']}")
+                        except Exception as e:
+                            logger.error(f"Error aggregating logs: {e}")
+                            # Continue with original batch on error
+                    
                     processed_batch = self._process_batch(batch, source)
                     
                     # Deliver the batch to the target
@@ -227,6 +242,20 @@ class ProcessorManager:
                     
                     # If batch is full, process it
                     if len(batch) >= batch_size:
+                        # Apply aggregation if enabled
+                        if self.aggregation_manager and batch:
+                            try:
+                                # Use the aggregation manager to aggregate the batch
+                                original_size = len(batch)
+                                batch = self.aggregation_manager.aggregate_batch(batch, source_id)
+                                new_size = len(batch)
+                                
+                                if original_size != new_size:
+                                    logger.info(f"Aggregated batch from {original_size} to {new_size} logs for source {source['source_name']}")
+                            except Exception as e:
+                                logger.error(f"Error aggregating logs: {e}")
+                                # Continue with original batch on error
+                        
                         processed_batch = self._process_batch(batch, source)
                         
                         # Deliver the batch to the target
@@ -257,6 +286,20 @@ class ProcessorManager:
             try:
                 source = self.source_manager.get_source(source_id)
                 if source:
+                    # Apply aggregation if enabled
+                    if self.aggregation_manager and batch:
+                        try:
+                            # Use the aggregation manager to aggregate the batch
+                            original_size = len(batch)
+                            batch = self.aggregation_manager.aggregate_batch(batch, source_id)
+                            new_size = len(batch)
+                            
+                            if original_size != new_size:
+                                logger.info(f"Aggregated batch from {original_size} to {new_size} logs for source {source['source_name']}")
+                        except Exception as e:
+                            logger.error(f"Error aggregating logs: {e}")
+                            # Continue with original batch on error
+                    
                     processed_batch = self._process_batch(batch, source)
                     
                     # Deliver the batch to the target

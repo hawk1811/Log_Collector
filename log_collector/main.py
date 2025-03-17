@@ -7,6 +7,7 @@ import argparse
 import threading
 from pathlib import Path
 
+from log_collector.aggregation_manager import AggregationManager
 from log_collector.config import logger
 from log_collector.source_manager import SourceManager
 from log_collector.processor import ProcessorManager
@@ -66,13 +67,14 @@ def main():
         # Initialize components
         logger.info("Initializing Log Collector...")
         source_manager = SourceManager()
-        processor_manager = ProcessorManager(source_manager)
+        aggregation_manager = AggregationManager()
+        processor_manager = ProcessorManager(source_manager, aggregation_manager)
         listener_manager = LogListener(source_manager, processor_manager)
         health_check = HealthCheck(source_manager, processor_manager)
         
         # Start CLI in interactive mode
         if not args.no_interactive:
-            cli = CLI(source_manager, processor_manager, listener_manager, health_check)
+            cli = CLI(source_manager, processor_manager, listener_manager, health_check, aggregation_manager)
             cli.start()
         else:
             # Non-interactive mode for service deployment
@@ -95,6 +97,3 @@ def main():
         return 1
     
     return 0
-
-if __name__ == "__main__":
-    sys.exit(main())

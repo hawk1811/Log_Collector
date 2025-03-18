@@ -136,7 +136,7 @@ class CLI:
         elif choice == "3":
             configure_health_check(self.health_check, self)
         elif choice == "4":
-            view_status(self.source_manager, self.processor_manager, self.listener_manager, self.health_check)
+            view_status(self.source_manager, self.processor_manager, self.listener_manager, self.health_check, self.aggregation_manager)
         elif choice == "5":
             self._exit_application()
             # If we return here, it means the user canceled the exit

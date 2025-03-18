@@ -5,6 +5,7 @@ Provides functions for adding, updating, and deleting log sources.
 import os
 import re
 import time
+import json
 from pathlib import Path
 
 from prompt_toolkit import prompt
@@ -474,200 +475,479 @@ def delete_source(source_id, source_manager, processor_manager, listener_manager
     
     input("Press Enter to continue...")
 
-def manage_sources(source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
-    """Manage existing sources.
+def view_template_fields(source_id, source_manager, aggregation_manager, cli):
+    """View all fields in a log template.
+    
+    Args:
+        source_id: Source ID to view template for
+        source_manager: Source manager instance
+        aggregation_manager: Aggregation manager instance
+        cli: CLI instance for header
+    """
+    clear()
+    cli._print_header()
+    source = source_manager.get_source(source_id)
+    
+    if not source:
+        print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
+        input("Press Enter to continue...")
+        return
+    
+    print(f"{Fore.CYAN}=== Log Template Fields for {source['source_name']} ==={ColorStyle.RESET_ALL}")
+    
+    # Get template
+    template = aggregation_manager.get_template(source_id)
+    if not template or "fields" not in template or not template["fields"]:
+        print(f"\n{Fore.YELLOW}No template fields available for this source.{ColorStyle.RESET_ALL}")
+        print("Waiting for the first log to be received...")
+        input("Press Enter to continue...")
+        return
+    
+    # Get template details
+    fields = template["fields"]
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(template.get("timestamp", 0)))
+    field_count = len(fields)
+    
+    print(f"\nTemplate captured on: {timestamp}")
+    print(f"Total fields: {field_count}")
+    
+    if "log" in template:
+        # Show the original log that was used to create the template
+        print(f"\n{Fore.CYAN}Original Log Sample:{ColorStyle.RESET_ALL}")
+        log_sample = template["log"]
+        if isinstance(log_sample, dict):
+            try:
+                # Pretty-print JSON for better readability
+                print(json.dumps(log_sample, indent=2)[:500])
+                if len(json.dumps(log_sample, indent=2)) > 500:
+                    print("... (truncated)")
+            except:
+                print(str(log_sample)[:500])
+                if len(str(log_sample)) > 500:
+                    print("... (truncated)")
+        else:
+            print(str(log_sample)[:500])
+            if len(str(log_sample)) > 500:
+                print("... (truncated)")
+    
+    # Display the fields in a structured table
+    print(f"\n{Fore.CYAN}Extracted Fields:{ColorStyle.RESET_ALL}")
+    print(f"\n{Fore.GREEN}{'Field Name':<30} {'Type':<15} {'Value Example':<40}{ColorStyle.RESET_ALL}")
+    print(f"{'-'*30} {'-'*15} {'-'*40}")
+    
+    # First show special fields that are most important
+    special_fields = ["timestamp", "message", "log_level", "severity", "level", "host", "source", "ip_address"]
+    for field_name in special_fields:
+        if field_name in fields:
+            field_info = fields[field_name]
+            field_type = field_info.get("type", "unknown")
+            
+            # Get example with formatting if available
+            if "formatted" in field_info:
+                example = field_info.get("formatted", "")
+            else:
+                example = field_info.get("example", "")
+            
+            # Add length info for string fields
+            if field_type == "string" and "length" in field_info:
+                field_type = f"string({field_info['length']})"
+            
+            # Truncate long examples
+            example_str = str(example)
+            if len(example_str) > 37:
+                example_str = example_str[:34] + "..."
+            
+            # Format the line with highlighting for special fields
+            print(f"{Fore.YELLOW}{field_name:<30}{ColorStyle.RESET_ALL} {field_type:<15} {example_str:<40}")
+    
+    # Then show all other fields
+    for field_name, field_info in sorted(fields.items()):
+        # Skip special fields we already showed
+        if field_name in special_fields:
+            continue
+            
+        field_type = field_info.get("type", "unknown")
+        
+        # Get example with formatting if available
+        if "formatted" in field_info:
+            example = field_info.get("formatted", "")
+        else:
+            example = field_info.get("example", "")
+        
+        # Add length info for string fields
+        if field_type == "string" and "length" in field_info:
+            field_type = f"string({field_info['length']})"
+        
+        # Truncate long examples
+        example_str = str(example)
+        if len(example_str) > 37:
+            example_str = example_str[:34] + "..."
+        
+        # Format the line
+        print(f"{field_name:<30} {field_type:<15} {example_str:<40}")
+    
+    # Show aggregation status
+    policy = aggregation_manager.get_policy(source_id)
+    print(f"\n{Fore.CYAN}Aggregation Status:{ColorStyle.RESET_ALL}")
+    if policy:
+        status = "Enabled" if policy.get("enabled", True) else "Disabled"
+        fields = ", ".join(policy["fields"])
+        print(f"Status: {status}")
+        print(f"Aggregation Fields: {fields}")
+    else:
+        print("No aggregation rule configured")
+    
+    print("\nNote: Template is automatically created from the first log received.")
+    print("To refresh template, delete it and wait for the next log.")
+    
+    input("\nPress Enter to continue...")
+
+def delete_template(source_id, source_manager, aggregation_manager, cli):
+    """Delete a log template.
+    
+    Args:
+        source_id: Source ID to delete template for
+        source_manager: Source manager instance
+        aggregation_manager: Aggregation manager instance
+        cli: CLI instance for header
+    """
+    clear()
+    cli._print_header()
+    source = source_manager.get_source(source_id)
+    
+    if not source:
+        print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
+        input("Press Enter to continue...")
+        return
+    
+    print(f"{Fore.CYAN}=== Delete Log Template for {source['source_name']} ==={ColorStyle.RESET_ALL}")
+    
+    # Check if template exists
+    if source_id not in aggregation_manager.templates:
+        print(f"\n{Fore.YELLOW}No template exists for this source.{ColorStyle.RESET_ALL}")
+        input("Press Enter to continue...")
+        return
+    
+    # Get template details for confirmation
+    template = aggregation_manager.get_template(source_id)
+    if template and "fields" in template:
+        field_count = len(template["fields"])
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(template.get("timestamp", 0)))
+        print(f"\nTemplate details:")
+        print(f"- Captured on: {timestamp}")
+        print(f"- Fields: {field_count}")
+    
+    # Check if there's an aggregation policy
+    policy = aggregation_manager.get_policy(source_id)
+    if policy:
+        print(f"\n{Fore.YELLOW}Warning: This source has an active aggregation rule.{ColorStyle.RESET_ALL}")
+        print(f"Deleting the template will also delete the aggregation rule.")
+    
+    # Confirm deletion
+    confirm = prompt(
+        HTML("<ansicyan>Are you sure you want to delete this template? (y/n): </ansicyan>"),
+        style=cli.prompt_style
+    )
+    
+    if confirm.lower() == 'y':
+        # Delete template
+        result = aggregation_manager.delete_template(source_id)
+        
+        if result:
+            print(f"\n{Fore.GREEN}Template deleted successfully.{ColorStyle.RESET_ALL}")
+            print("A new template will be created when the next log is received.")
+        else:
+            print(f"\n{Fore.RED}Failed to delete template.{ColorStyle.RESET_ALL}")
+    else:
+        print(f"\n{Fore.YELLOW}Deletion cancelled.{ColorStyle.RESET_ALL}")
+    
+    input("Press Enter to continue...")
+
+def delete_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli):
+    """Delete an aggregation rule.
     
     Args:
         source_manager: Source manager instance
         processor_manager: Processor manager instance
-        listener_manager: Listener manager instance
-        cli: CLI instance for style and header
-        aggregation_manager: Optional aggregation manager instance
+        aggregation_manager: Aggregation manager instance
+        cli: CLI instance for header
     """
-    while True:
-        clear()
-        cli._print_header()
-        print(f"{Fore.CYAN}=== Manage Sources ==={ColorStyle.RESET_ALL}")
+    clear()
+    cli._print_header()
+    print(f"{Fore.CYAN}=== Delete Aggregation Rule ==={ColorStyle.RESET_ALL}")
+    
+    # Get sources with aggregation rules
+    sources = source_manager.get_sources()
+    policies = aggregation_manager.get_all_policies()
+    
+    if not policies:
+        print(f"{Fore.YELLOW}No aggregation rules configured.{ColorStyle.RESET_ALL}")
+        input("Press Enter to continue...")
+        return
+    
+    # Show sources with policies
+        print("\nConfigured Rules:")
+        source_list = []
         
-        sources = source_manager.get_sources()
-        if not sources:
-            print("No sources configured.")
-            input("Press Enter to return to main menu...")
-            return
-        
-        # Try to auto-save templates for all sources and track results
-        template_status = {}
-        if aggregation_manager:
-            for source_id in sources:
-                has_template = source_id in aggregation_manager.templates
-                if not has_template:
-                    # Try to create a template if it doesn't exist
-                    has_template = aggregation_manager.ensure_template(source_id, processor_manager)
-                template_status[source_id] = has_template
-        
-        print("\nConfigured Sources:")
-        for i, (source_id, source) in enumerate(sources.items(), 1):
-            # Show template status if aggregation manager is available
-            template_info = ""
-            if aggregation_manager:
-                has_template = template_status.get(source_id, False)
-                if has_template:
-                    template_info = f" {Fore.GREEN}[Log template available]{ColorStyle.RESET_ALL}"
-                else:
-                    template_info = f" {Fore.YELLOW}[Waiting for logs]{ColorStyle.RESET_ALL}"
+        for i, (source_id, policy) in enumerate(policies.items(), 1):
+            source_name = sources[source_id]["source_name"] if source_id in sources else "Unknown"
+            fields = ", ".join(policy["fields"])
+            status = "Enabled" if policy.get("enabled", True) else "Disabled"
             
-            print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']}){template_info}")
+            print(f"{i}. {source_name} - {status}")
+            print(f"   Fields: {fields}")
+            
+            source_list.append(source_id)
         
-        print("\nOptions:")
-        print("0. Return to Main Menu")
-        print("1-N. Select Source to Manage")
+        print("\n0. Cancel")
         
-        if aggregation_manager:
-            print("\nOr select:")
-            print("A. Manage Aggregation Rules")
-        
-        choice = prompt(
-            HTML("<ansicyan>Choose an option: </ansicyan>"),
-            style=cli.prompt_style
-        )
-        
-        if choice == "0":
-            return
-        elif choice.upper() == "A" and aggregation_manager:
-            from log_collector.cli_aggregation import manage_aggregation_rules
-            manage_aggregation_rules(source_manager, processor_manager, aggregation_manager, cli)
-        else:
+        # Select source
+        while True:
+            choice = prompt(
+                HTML("<ansicyan>Select a rule to delete: </ansicyan>"),
+                style=cli.prompt_style
+            )
+            
+            if choice == "0":
+                return
+            
             try:
                 index = int(choice) - 1
-                if 0 <= index < len(sources):
-                    source_id = list(sources.keys())[index]
-                    manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager)
+                if 0 <= index < len(source_list):
+                    source_id = source_list[index]
+                    source = sources.get(source_id, {"source_name": "Unknown"})
+                    break
                 else:
                     print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
-                    input("Press Enter to continue...")
             except ValueError:
                 print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
-                input("Press Enter to continue...")
-
-def manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
-    """Manage a specific source.
-    
-    Args:
-        source_id: ID of the source to manage
-        source_manager: Source manager instance
-        processor_manager: Processor manager instance
-        listener_manager: Listener manager instance
-        cli: CLI instance for style and header
-        aggregation_manager: Optional aggregation manager instance
-    """
-    while True:
-        clear()
-        cli._print_header()
-        source = source_manager.get_source(source_id)
-        if not source:
-            print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")
-            return
         
-        # Auto-save template if not already saved
-        if aggregation_manager:
-            aggregation_manager.ensure_template(source_id, processor_manager)
-        
-        print(f"{Fore.CYAN}=== Manage Source: {source['source_name']} ==={ColorStyle.RESET_ALL}")
-        print(f"\nSource ID: {source_id}")
-        print(f"Source Name: {source['source_name']}")
-        print(f"Source IP: {source['source_ip']}")
-        print(f"Listener Port: {source['listener_port']}")
-        print(f"Protocol: {source['protocol']}")
-        print(f"Target Type: {source['target_type']}")
-        
-        if source['target_type'] == "FOLDER":
-            print(f"Folder Path: {source['folder_path']}")
-        elif source['target_type'] == "HEC":
-            print(f"HEC URL: {source['hec_url']}")
-            print(f"HEC Token: {'*' * 10}")
-        
-        print(f"Batch Size: {source.get('batch_size', 'Default')}")
-        
-        # Display aggregation status if available
-        if aggregation_manager:
-            policy = aggregation_manager.get_policy(source_id)
-            has_template = source_id in aggregation_manager.templates
-            
-            if policy:
-                status = "Enabled" if policy.get("enabled", True) else "Disabled"
-                fields = ", ".join(policy["fields"])
-                print(f"\n{Fore.CYAN}Aggregation Status:{ColorStyle.RESET_ALL} {status}")
-                print(f"{Fore.CYAN}Aggregation Fields:{ColorStyle.RESET_ALL} {fields}")
-            else:
-                print(f"\n{Fore.CYAN}Aggregation Status:{ColorStyle.RESET_ALL} Not Configured")
-            
-            # Display template information
-            if has_template:
-                template = aggregation_manager.get_template(source_id)
-                if template and "fields" in template:
-                    field_count = len(template["fields"])
-                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(template.get("timestamp", 0)))
-                    print(f"\n{Fore.CYAN}Log Template:{ColorStyle.RESET_ALL} Available ({field_count} fields extracted on {timestamp})")
-                    
-                    # Show top 3 most relevant fields as a preview
-                    priority_fields = ["timestamp", "message", "log_level", "host", "severity", "source"]
-                    shown_fields = []
-                    
-                    # First try priority fields
-                    for field in priority_fields:
-                        if field in template["fields"] and len(shown_fields) < 3:
-                            value = template["fields"][field].get("example", "")
-                            if len(value) > 30:
-                                value = value[:27] + "..."
-                            shown_fields.append(f"{field}={value}")
-                    
-                    # Then add other fields until we have 3
-                    if len(shown_fields) < 3:
-                        for field, info in template["fields"].items():
-                            if field not in priority_fields and len(shown_fields) < 3:
-                                value = info.get("example", "")
-                                if len(value) > 30:
-                                    value = value[:27] + "..."
-                                shown_fields.append(f"{field}={value}")
-                    
-                    if shown_fields:
-                        print(f"{Fore.CYAN}Sample Fields:{ColorStyle.RESET_ALL} {', '.join(shown_fields)}")
-                else:
-                    print(f"\n{Fore.CYAN}Log Template:{ColorStyle.RESET_ALL} Available for configuration")
-            else:
-                print(f"\n{Fore.YELLOW}Log Template: Waiting for first log to be received{ColorStyle.RESET_ALL}")
-        
-        print("\nOptions:")
-        print("1. Edit Source")
-        print("2. Delete Source")
-        if aggregation_manager:
-            print("3. Manage Aggregation Rules")
-            print("4. Return to Sources List")
-        else:
-            print("3. Return to Sources List")
-        
-        choice = prompt(
-            HTML("<ansicyan>Choose an option: </ansicyan>"),
+        # Confirm deletion
+        confirm = prompt(
+            HTML(f"<ansicyan>Are you sure you want to delete the rule for {source['source_name']}? (y/n): </ansicyan>"),
             style=cli.prompt_style
         )
         
-        if choice == "1":
-            edit_source(source_id, source_manager, processor_manager, listener_manager, cli)
-        elif choice == "2":
-            delete_source(source_id, source_manager, processor_manager, listener_manager)
-            return
-        elif choice == "3" and aggregation_manager:
-            from log_collector.cli_aggregation import create_aggregation_rule, edit_aggregation_rule
-            policy = aggregation_manager.get_policy(source_id)
-            if policy:
-                # Edit existing rule
-                edit_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
-            else:
-                # Create new rule
-                create_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
-        elif (choice == "4" and aggregation_manager) or (choice == "3" and not aggregation_manager):
-            return
-        else:
-            print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+        if confirm.lower() != 'y':
+            print(f"{Fore.YELLOW}Deletion cancelled.{ColorStyle.RESET_ALL}")
             input("Press Enter to continue...")
+            return
+        
+        # Delete the rule
+        result = aggregation_manager.delete_policy(source_id)
+        
+        if result:
+            print(f"{Fore.GREEN}Aggregation rule deleted successfully.{ColorStyle.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}Failed to delete aggregation rule.{ColorStyle.RESET_ALL}")
+        
+        input("Press Enter to continue...")
+    
+    def manage_sources(source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
+        """Manage existing sources.
+        
+        Args:
+            source_manager: Source manager instance
+            processor_manager: Processor manager instance
+            listener_manager: Listener manager instance
+            cli: CLI instance for style and header
+            aggregation_manager: Optional aggregation manager instance
+        """
+        while True:
+            clear()
+            cli._print_header()
+            print(f"{Fore.CYAN}=== Manage Sources ==={ColorStyle.RESET_ALL}")
+            
+            sources = source_manager.get_sources()
+            if not sources:
+                print("No sources configured.")
+                input("Press Enter to return to main menu...")
+                return
+            
+            # Try to auto-save templates for all sources and track results
+            template_status = {}
+            if aggregation_manager:
+                for source_id in sources:
+                    has_template = source_id in aggregation_manager.templates
+                    if not has_template:
+                        # Try to create a template if it doesn't exist
+                        has_template = aggregation_manager.ensure_template(source_id, processor_manager)
+                    template_status[source_id] = has_template
+            
+            print("\nConfigured Sources:")
+            for i, (source_id, source) in enumerate(sources.items(), 1):
+                # Show template status if aggregation manager is available
+                template_info = ""
+                if aggregation_manager:
+                    has_template = template_status.get(source_id, False)
+                    if has_template:
+                        template_info = f" {Fore.GREEN}[Log template available]{ColorStyle.RESET_ALL}"
+                    else:
+                        template_info = f" {Fore.YELLOW}[Waiting for logs]{ColorStyle.RESET_ALL}"
+                
+                print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']}){template_info}")
+            
+            print("\nOptions:")
+            print("0. Return to Main Menu")
+            print("1-N. Select Source to Manage")
+            
+            if aggregation_manager:
+                print("\nOr select:")
+                print("A. Manage Aggregation Rules")
+            
+            choice = prompt(
+                HTML("<ansicyan>Choose an option: </ansicyan>"),
+                style=cli.prompt_style
+            )
+            
+            if choice == "0":
+                return
+            elif choice.upper() == "A" and aggregation_manager:
+                from log_collector.cli_aggregation import manage_aggregation_rules
+                manage_aggregation_rules(source_manager, processor_manager, aggregation_manager, cli)
+            else:
+                try:
+                    index = int(choice) - 1
+                    if 0 <= index < len(sources):
+                        source_id = list(sources.keys())[index]
+                        manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager)
+                    else:
+                        print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                        input("Press Enter to continue...")
+                except ValueError:
+                    print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                    input("Press Enter to continue...")
+    
+    def manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
+        """Manage a specific source.
+        
+        Args:
+            source_id: ID of the source to manage
+            source_manager: Source manager instance
+            processor_manager: Processor manager instance
+            listener_manager: Listener manager instance
+            cli: CLI instance for style and header
+            aggregation_manager: Optional aggregation manager instance
+        """
+        while True:
+            clear()
+            cli._print_header()
+            source = source_manager.get_source(source_id)
+            if not source:
+                print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
+                return
+            
+            # Auto-save template if not already saved
+            if aggregation_manager:
+                aggregation_manager.ensure_template(source_id, processor_manager)
+            
+            print(f"{Fore.CYAN}=== Manage Source: {source['source_name']} ==={ColorStyle.RESET_ALL}")
+            print(f"\nSource ID: {source_id}")
+            print(f"Source Name: {source['source_name']}")
+            print(f"Source IP: {source['source_ip']}")
+            print(f"Listener Port: {source['listener_port']}")
+            print(f"Protocol: {source['protocol']}")
+            print(f"Target Type: {source['target_type']}")
+            
+            if source['target_type'] == "FOLDER":
+                print(f"Folder Path: {source['folder_path']}")
+            elif source['target_type'] == "HEC":
+                print(f"HEC URL: {source['hec_url']}")
+                print(f"HEC Token: {'*' * 10}")
+            
+            print(f"Batch Size: {source.get('batch_size', 'Default')}")
+            
+            # Display aggregation status if available
+            if aggregation_manager:
+                policy = aggregation_manager.get_policy(source_id)
+                has_template = source_id in aggregation_manager.templates
+                
+                if policy:
+                    status = "Enabled" if policy.get("enabled", True) else "Disabled"
+                    fields = ", ".join(policy["fields"])
+                    print(f"\n{Fore.CYAN}Aggregation Status:{ColorStyle.RESET_ALL} {status}")
+                    print(f"{Fore.CYAN}Aggregation Fields:{ColorStyle.RESET_ALL} {fields}")
+                else:
+                    print(f"\n{Fore.CYAN}Aggregation Status:{ColorStyle.RESET_ALL} Not Configured")
+                
+                # Display template information
+                if has_template:
+                    template = aggregation_manager.get_template(source_id)
+                    if template and "fields" in template:
+                        field_count = len(template["fields"])
+                        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(template.get("timestamp", 0)))
+                        print(f"\n{Fore.CYAN}Log Template:{ColorStyle.RESET_ALL} Available ({field_count} fields extracted on {timestamp})")
+                        
+                        # Show top 3 most relevant fields as a preview
+                        priority_fields = ["timestamp", "message", "log_level", "host", "severity", "source"]
+                        shown_fields = []
+                        
+                        # First try priority fields
+                        for field in priority_fields:
+                            if field in template["fields"] and len(shown_fields) < 3:
+                                value = template["fields"][field].get("example", "")
+                                if len(str(value)) > 30:
+                                    value = str(value)[:27] + "..."
+                                shown_fields.append(f"{field}={value}")
+                        
+                        # Then add other fields until we have 3
+                        if len(shown_fields) < 3:
+                            for field, info in template["fields"].items():
+                                if field not in priority_fields and len(shown_fields) < 3:
+                                    value = info.get("example", "")
+                                    if len(str(value)) > 30:
+                                        value = str(value)[:27] + "..."
+                                    shown_fields.append(f"{field}={value}")
+                        
+                        if shown_fields:
+                            print(f"{Fore.CYAN}Sample Fields:{ColorStyle.RESET_ALL} {', '.join(shown_fields)}")
+                            
+                        # Add option to view all fields
+                        print(f"\n{Fore.YELLOW}Use option 4 to view all template fields{ColorStyle.RESET_ALL}")
+                    else:
+                        print(f"\n{Fore.CYAN}Log Template:{ColorStyle.RESET_ALL} Available for configuration")
+                else:
+                    print(f"\n{Fore.YELLOW}Log Template: Waiting for first log to be received{ColorStyle.RESET_ALL}")
+            
+            print("\nOptions:")
+            print("1. Edit Source")
+            print("2. Delete Source")
+            if aggregation_manager:
+                print("3. Manage Aggregation Rules")
+                print("4. View Log Template Fields")
+                print("5. Delete Log Template")
+                print("6. Return to Sources List")
+            else:
+                print("3. Return to Sources List")
+            
+            choice = prompt(
+                HTML("<ansicyan>Choose an option: </ansicyan>"),
+                style=cli.prompt_style
+            )
+            
+            if choice == "1":
+                edit_source(source_id, source_manager, processor_manager, listener_manager, cli)
+            elif choice == "2":
+                delete_source(source_id, source_manager, processor_manager, listener_manager)
+                return
+            elif choice == "3" and aggregation_manager:
+                from log_collector.cli_aggregation import create_aggregation_rule, edit_aggregation_rule
+                policy = aggregation_manager.get_policy(source_id)
+                if policy:
+                    # Edit existing rule
+                    edit_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
+                else:
+                    # Create new rule
+                    create_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
+            elif choice == "4" and aggregation_manager:
+                # View log template fields
+                view_template_fields(source_id, source_manager, aggregation_manager, cli)
+            elif choice == "5" and aggregation_manager:
+                # Delete log template
+                delete_template(source_id, source_manager, aggregation_manager, cli)
+            elif (choice == "6" and aggregation_manager) or (choice == "3" and not aggregation_manager):
+                return
+            else:
+                print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")

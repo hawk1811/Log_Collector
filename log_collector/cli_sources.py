@@ -172,7 +172,7 @@ def add_source(source_manager, processor_manager, listener_manager, cli):
             input("Press Enter to continue...")
             return
 
-source_data["hec_token"] = hec_token
+        source_data["hec_token"] = hec_token
         
         # Get batch size
         batch_size = prompt(f"Batch Size [{DEFAULT_HEC_BATCH_SIZE}]: ")

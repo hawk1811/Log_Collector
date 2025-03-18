@@ -112,6 +112,28 @@ def restore_terminal(old_settings):
     Args:
         old_settings: Terminal settings to restore
     """
+    # Global variable to track terminal state
+    _terminal_modified = False
+    
+    def safe_setup_terminal():
+        """Safely setup terminal for non-blocking input with state tracking."""
+        global _terminal_modified
+        
+        try:
+            old_settings = setup_terminal()
+            _terminal_modified = True
+            return old_settings
+        except Exception as e:
+            logger.error(f"Error in safe terminal setup: {e}")
+            return None
+    
+    def safe_restore_terminal(old_settings):
+        """Safely restore terminal settings with state tracking."""
+        global _terminal_modified
+        
+        if _terminal_modified and old_settings:
+            restore_terminal(old_settings)
+            _terminal_modified = False
     try:
         if os.name == 'posix' and old_settings:
             import termios

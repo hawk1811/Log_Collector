@@ -87,7 +87,9 @@ class AggregationManager:
                 if sample_log:
                     # Store it as a template
                     template_fields = self.store_log_template(source_id, sample_log)
-                    logger.info(f"Auto-saved sample log template for source {source_id}")
+                    logger.info(f"Auto-saved sample log template for source {source_id} with {len(template_fields)} fields")
+                    
+                    # Process the sample log right away to extract fields
                     return True
                 else:
                     logger.warning(f"No valid logs found in queue for source {source_id}")
@@ -238,6 +240,29 @@ class AggregationManager:
         # Handle different delimiters between key-value pairs
         found_pairs = 0
         
+        # First, try to extract common structured fields like timestamp, level, etc.
+        import re
+        
+        # Look for timestamp
+        timestamp_patterns = [
+            (r'\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2})?)\b', 'ISO8601'),
+            (r'\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b', 'datetime'),
+            (r'\b(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\b', 'MM/DD/YYYY'),
+            (r'\b(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\b', 'Syslog')
+        ]
+        
+        for pattern, time_format in timestamp_patterns:
+            match = re.search(pattern, log_content)
+            if match:
+                timestamp = match.group(1)
+                fields["timestamp"] = {
+                    "type": "timestamp",
+                    "format": time_format,
+                    "example": timestamp,
+                    "formatted": timestamp
+                }
+                break
+        
         # Try to detect the primary delimiter by counting occurrences
         delimiter_counts = {}
         for delimiter in [' ', ',', ';', '|', '\t']:
@@ -280,24 +305,47 @@ class AggregationManager:
                         key = key.strip()
                         value = value.strip()
                         
+                        # Skip empty keys or values
+                        if not key or not value:
+                            continue
+                        
                         # Try to detect value type
                         value_type = "string"
+                        formatted = value
+                        
                         try:
                             int_val = int(value)
                             value_type = "int"
+                            formatted = f"{int_val:,}"
                         except ValueError:
                             try:
                                 float_val = float(value)
                                 value_type = "float"
+                                formatted = f"{float_val:.2f}"
                             except ValueError:
                                 # Check for boolean values
                                 if value.lower() in ('true', 'false'):
                                     value_type = "bool"
+                                    formatted = value
+                                elif value.lower() in ('yes', 'no'):
+                                    value_type = "bool"
+                                    formatted = "true" if value.lower() == "yes" else "false"
+                                elif key.lower() in ('time', 'timestamp', 'date'):
+                                    value_type = "timestamp"
+                                    formatted = value
+                                elif key.lower() in ('level', 'severity', 'loglevel'):
+                                    value_type = "level"
+                                    formatted = value
+                                else:
+                                    # If the value is longer than 40 chars, truncate it for display
+                                    if len(formatted) > 40:
+                                        formatted = formatted[:37] + "..."
                         
                         # Store field with detected type
                         fields[key] = {
                             "type": value_type,
                             "example": value,
+                            "formatted": formatted,
                             "original": value
                         }
                         found_pairs += 1
@@ -307,17 +355,80 @@ class AggregationManager:
         if found_pairs == 0:
             for separator in [':', '->', '=>']:
                 if separator in log_content:
-                    parts = log_content.split()
-                    for part in parts:
-                        if separator in part:
-                            key, value = part.split(separator, 1)
+                    # Try whole-string pattern first (key: value)
+                    whole_pattern = re.findall(r'(\w+)\s*' + re.escape(separator) + r'\s*([^' + re.escape(separator) + r']+)', log_content)
+                    if whole_pattern:
+                        for key, value in whole_pattern:
                             key = key.strip()
                             value = value.strip()
+                            
+                            # Skip empty keys or values
+                            if not key or not value:
+                                continue
+                                
+                            # Try to determine value type
+                            value_type = "string"
+                            formatted = value
+                            
+                            try:
+                                int_val = int(value)
+                                value_type = "int"
+                                formatted = f"{int_val:,}"
+                            except ValueError:
+                                try:
+                                    float_val = float(value)
+                                    value_type = "float"
+                                    formatted = f"{float_val:.2f}"
+                                except ValueError:
+                                    # If the value is longer than 40 chars, truncate it for display
+                                    if len(formatted) > 40:
+                                        formatted = formatted[:37] + "..."
+                                
                             fields[key] = {
-                                "type": "string",
-                                "example": value
+                                "type": value_type,
+                                "example": value,
+                                "formatted": formatted
                             }
                             found_pairs += 1
+                    else:
+                        # Try token-by-token approach
+                        parts = log_content.split()
+                        for part in parts:
+                            if separator in part:
+                                key, value = part.split(separator, 1)
+                                key = key.strip()
+                                value = value.strip()
+                                
+                                # Skip empty keys or values
+                                if not key or not value:
+                                    continue
+                                    
+                                fields[key] = {
+                                    "type": "string",
+                                    "example": value,
+                                    "formatted": value if len(value) < 40 else value[:37] + "..."
+                                }
+                                found_pairs += 1
+        
+        # If there's still no fields found, try to find field=value patterns within tokens
+        if found_pairs == 0:
+            tokens = log_content.split()
+            for token in tokens:
+                if '=' in token and not token.startswith('=') and not token.endswith('='):
+                    key, value = token.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Skip empty keys or values
+                    if not key or not value:
+                        continue
+                        
+                    fields[key] = {
+                        "type": "string",
+                        "example": value,
+                        "formatted": value if len(value) < 40 else value[:37] + "..."
+                    }
+                    found_pairs += 1
     
     def _extract_space_separated(self, log_content, fields):
         """Extract fields from space-separated values.
@@ -351,7 +462,8 @@ class AggregationManager:
         if has_timestamp:
             fields["timestamp"] = {
                 "type": "timestamp",
-                "example": timestamp_value
+                "example": timestamp_value,
+                "formatted": timestamp_value
             }
         
         # Look for log levels
@@ -363,9 +475,29 @@ class AggregationManager:
                 found_level = level
                 fields["log_level"] = {
                     "type": "level",
-                    "example": level
+                    "example": level,
+                    "formatted": level
                 }
                 break
+        
+        # Try to detect if there's a message section (usually after a colon or in square brackets)
+        message_match = re.search(r':\s*(.+)$', log_content)
+        if message_match:
+            message = message_match.group(1).strip()
+            fields["message"] = {
+                "type": "string",
+                "example": message,
+                "formatted": message if len(message) < 40 else message[:37] + "..."
+            }
+        
+        # Look for IP addresses
+        ip_matches = re.findall(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', log_content)
+        if ip_matches:
+            fields["ip_address"] = {
+                "type": "ip",
+                "example": ip_matches[0],
+                "formatted": ip_matches[0]
+            }
         
         # Now process the remaining content as space-separated fields
         values = log_content.split()
@@ -382,8 +514,24 @@ class AggregationManager:
             # Skip the log level if we found one
             if found_level and value == found_level:
                 continue
+            
+            # Skip if this value is already captured in another field
+            skip = False
+            for field_data in fields.values():
+                if field_data.get("example") == value:
+                    skip = True
+                    break
+            
+            if skip:
+                continue
                 
             field_name = f"field_{i+1}"
+            
+            # Check for field=value format within a token
+            if "=" in value and not value.startswith("=") and not value.endswith("="):
+                key, val = value.split("=", 1)
+                field_name = key.strip()
+                value = val.strip()
             
             # Try to detect the value type
             value_type = "string"
@@ -403,6 +551,10 @@ class AggregationManager:
                         formatted = value
                     else:
                         formatted = value
+                        
+                        # If the value is longer than 40 chars, truncate it for display
+                        if len(formatted) > 40:
+                            formatted = formatted[:37] + "..."
             
             fields[field_name] = {
                 "type": value_type,
@@ -483,6 +635,34 @@ class AggregationManager:
         result = self._save_policies()
         if result:
             logger.info(f"Deleted aggregation policy for source {source_id}")
+        
+        return result
+        
+    def delete_template(self, source_id):
+        """Delete a log template.
+        
+        Args:
+            source_id: Source ID
+            
+        Returns:
+            bool: Success or failure
+        """
+        if source_id not in self.templates:
+            logger.error(f"No template found for source {source_id}")
+            return False
+        
+        # Delete the template
+        del self.templates[source_id]
+        
+        # Also delete any associated policy since it depends on the template
+        if source_id in self.policies:
+            del self.policies[source_id]
+            logger.info(f"Also deleted associated policy for source {source_id}")
+        
+        # Save changes
+        result = self._save_policies()
+        if result:
+            logger.info(f"Deleted template for source {source_id}")
         
         return result
     

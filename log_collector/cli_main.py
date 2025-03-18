@@ -78,6 +78,8 @@ class CLI:
                     sys.exit(0)
                 else:
                     print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
+                    # Re-initialize terminal settings after confirm prompt
+                    self.old_terminal_settings = setup_terminal()
                     return
             except KeyboardInterrupt:
                 # If Ctrl+C is pressed during the prompt, exit immediately
@@ -91,15 +93,13 @@ class CLI:
         
         # Handle authentication if auth_manager is provided
         if self.auth_manager:
-            # Save current terminal settings
-            old_auth_settings = setup_terminal()
+            # Save current terminal settings before authentication flow
+            restore_terminal(self.old_terminal_settings)  # Make sure we start clean
             
             # Show login screen
             authenticated, username, needs_password_change = login_screen(self.auth_manager, self)
             
             if not authenticated:
-                # Restore terminal settings before exiting
-                restore_terminal(old_auth_settings)
                 print(f"{Fore.RED}Authentication failed. Exiting.{ColorStyle.RESET_ALL}")
                 sys.exit(1)
             
@@ -112,9 +112,7 @@ class CLI:
                 while not password_changed:
                     password_changed = change_password_screen(self.auth_manager, username, True, self)
             
-            # Restore terminal settings after authentication flow
-            restore_terminal(old_auth_settings)
-            # Re-initialize for the main application
+            # Re-initialize terminal settings after authentication flow
             self.old_terminal_settings = setup_terminal()
         
         # Start component threads if there are already sources configured

@@ -67,6 +67,7 @@ def main():
     try:
         # Initialize components
         logger.info("Initializing Log Collector...")
+        auth_manager = AuthManager()
         source_manager = SourceManager()
         aggregation_manager = AggregationManager()
         
@@ -77,7 +78,7 @@ def main():
         
         # Start CLI in interactive mode
         if not args.no_interactive:
-            cli = CLI(source_manager, processor_manager, listener_manager, health_check, aggregation_manager)
+            cli = CLI(source_manager, processor_manager, listener_manager, health_check, aggregation_manager, auth_manager)
             cli.start()
         else:
             # Non-interactive mode for service deployment

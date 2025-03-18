@@ -263,40 +263,37 @@ class AuthManager:
         return True, "Password meets requirements"
     
     def change_password(self, username, old_password, new_password):
-        """Change a user's password.
-        
-        Args:
-            username: Username
-            old_password: Current password
-            new_password: New password
-            
-        Returns:
-            tuple: (success, message)
-        """
+        """Change a user's password."""
         with self.lock:
-            # First authenticate with old password
-            auth_result, auth_message, _ = self.authenticate(username, old_password)
-            if not auth_result:
-                return False, auth_message
-            
-            # Validate new password
-            valid, message = self.validate_password(new_password)
-            if not valid:
-                return False, message
-            
-            # Change password
-            salt = self._generate_salt()
-            hashed_password = self._hash_password(new_password, salt)
-            
-            self.users[username]["password_hash"] = hashed_password
-            self.users[username]["salt"] = salt
-            self.users[username]["force_change"] = False
-            self.users[username]["last_changed"] = time.time()
-            
-            if self._save_auth_data():
+            try:
+                # First authenticate with old password
+                auth_result, auth_message, _ = self.authenticate(username, old_password)
+                if not auth_result:
+                    return False, auth_message
+    
+                # Validate new password
+                valid, message = self.validate_password(new_password)
+                if not valid:
+                    return False, message
+    
+                # Change password
+                salt = self._generate_salt()
+                hashed_password = self._hash_password(new_password, salt)
+    
+                self.users[username]["password_hash"] = hashed_password
+                self.users[username]["salt"] = salt
+                self.users[username]["force_change"] = False
+                self.users[username]["last_changed"] = time.time()
+    
+                if not self._save_auth_data():
+                    raise IOError("Failed to save authentication data.")
+    
                 return True, "Password changed successfully"
-            else:
-                return False, "Error saving new password"
+            
+            except Exception as e:
+                logger.error(f"Password change error: {e}")
+                return False, "Unexpected error while changing password."
+
     
     def reset_password(self, username, new_password=None):
         """Reset a user's password to a default value or specified password.

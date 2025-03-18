@@ -43,6 +43,10 @@ class ProcessorManager:
         self.processed_logs_count = {}  # source_id -> count mapping
         self.last_processed_timestamp = {}  # source_id -> timestamp mapping
         self.metrics_lock = threading.Lock()
+        
+        # Log immediate template creation for new sources
+        if aggregation_manager:
+            logger.info("Aggregation manager is available - will auto-create templates from first logs")
     
     def start(self):
         """Start all processor threads."""
@@ -94,6 +98,20 @@ class ProcessorManager:
         """
         # Ensure we have a queue and processor for this source
         self._ensure_processor(source_id)
+        
+        # Auto-create a template from the first log if we have an aggregation manager
+        # and the queue is empty (meaning this is likely the first log)
+        if hasattr(self, 'aggregation_manager') and self.aggregation_manager:
+            # Check if this is the first log (empty queue)
+            if source_id in self.queues and self.queues[source_id].qsize() == 0:
+                # Check if we already have a template
+                if source_id not in self.aggregation_manager.templates:
+                    try:
+                        # Use this log as the template
+                        self.aggregation_manager.store_log_template(source_id, log_str)
+                        logger.info(f"Auto-created log template for source {source_id} from first log")
+                    except Exception as e:
+                        logger.error(f"Error creating template from first log: {e}")
         
         # Add log to queue
         q = self.queues[source_id]

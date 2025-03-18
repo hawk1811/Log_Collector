@@ -75,13 +75,23 @@ class AggregationManager:
         if source_id in processor_manager.queues and not processor_manager.queues[source_id].empty():
             try:
                 # Get a copy of the first log without removing it
-                sample_log = list(processor_manager.queues[source_id].queue)[0]
+                queue_items = list(processor_manager.queues[source_id].queue)
                 
-                # Store it as a template
-                template_fields = self.store_log_template(source_id, sample_log)
-                logger.info(f"Auto-saved sample log template for source {source_id}")
+                # Try to find a non-empty log in the queue
+                sample_log = None
+                for item in queue_items:
+                    if item and (isinstance(item, dict) or (isinstance(item, str) and len(item.strip()) > 0)):
+                        sample_log = item
+                        break
                 
-                return True
+                if sample_log:
+                    # Store it as a template
+                    template_fields = self.store_log_template(source_id, sample_log)
+                    logger.info(f"Auto-saved sample log template for source {source_id}")
+                    return True
+                else:
+                    logger.warning(f"No valid logs found in queue for source {source_id}")
+                    return False
             except Exception as e:
                 logger.error(f"Error auto-saving log template for source {source_id}: {e}")
                 return False
@@ -165,17 +175,58 @@ class AggregationManager:
                 # Recursively process nested dictionaries
                 self._extract_fields_from_dict(value, fields, f"{field_name}.")
             elif isinstance(value, list):
-                # Store lists as a type but don't expand
-                fields[field_name] = {
-                    "type": "list",
-                    "example": str(value)[:100] if value else "[]"
-                }
+                # Store lists with more detail
+                value_str = str(value)[:100] if value else "[]"
+                if value and len(value) > 0:
+                    # Include sample item type
+                    item_type = type(value[0]).__name__ if len(value) > 0 else "unknown"
+                    
+                    # Handle list of dicts specially
+                    if isinstance(value[0], dict) and len(value[0]) <= 5:
+                        # Show basic structure for small dicts
+                        keys_str = ", ".join(list(value[0].keys()))
+                        value_str = f"List of objects with keys: {keys_str}"
+                        item_type = "object"
+                    
+                    fields[field_name] = {
+                        "type": f"list<{item_type}>",
+                        "example": value_str,
+                        "length": len(value)
+                    }
+                else:
+                    fields[field_name] = {
+                        "type": "list",
+                        "example": "[]",
+                        "length": 0
+                    }
             else:
-                # Store primitive values
-                fields[field_name] = {
-                    "type": type(value).__name__,
-                    "example": str(value)
-                }
+                # Store primitive values with more detail
+                type_name = type(value).__name__
+                example = str(value)
+                
+                # Truncate very long values
+                if len(example) > 100:
+                    example = example[:97] + "..."
+                
+                # Add length info for strings
+                if type_name == "str":
+                    fields[field_name] = {
+                        "type": type_name,
+                        "example": example,
+                        "length": len(str(value))
+                    }
+                # Add numeric formatting for numbers
+                elif type_name in ["int", "float"]:
+                    fields[field_name] = {
+                        "type": type_name,
+                        "example": example,
+                        "formatted": f"{value:,}" if type_name == "int" else f"{value:.2f}"
+                    }
+                else:
+                    fields[field_name] = {
+                        "type": type_name,
+                        "example": example
+                    }
     
     def _extract_key_value_pairs(self, log_content, fields):
         """Extract fields from key=value pairs format.
@@ -185,18 +236,88 @@ class AggregationManager:
             fields: Fields dictionary to populate
         """
         # Handle different delimiters between key-value pairs
-        for delimiter in [' ', ',', ';']:
-            pairs = log_content.split(delimiter)
+        found_pairs = 0
+        
+        # Try to detect the primary delimiter by counting occurrences
+        delimiter_counts = {}
+        for delimiter in [' ', ',', ';', '|', '\t']:
+            delimiter_counts[delimiter] = log_content.count(delimiter)
+        
+        # Sort delimiters by count (most common first)
+        sorted_delimiters = sorted(delimiter_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        # Try each delimiter, starting with the most common
+        for delimiter, _ in sorted_delimiters:
+            if delimiter == ' ' and ' = ' in log_content:
+                # Special case for space-separated logs with space around equals
+                pairs = log_content.split(' = ')
+                if len(pairs) > 1:
+                    # Reconstruct into key=value pairs with proper splitting
+                    new_pairs = []
+                    current_key = pairs[0].strip()
+                    
+                    for i in range(1, len(pairs)):
+                        parts = pairs[i].strip().split(' ', 1)
+                        if len(parts) > 1:
+                            value = parts[0]
+                            next_key = parts[1]
+                            new_pairs.append(f"{current_key}={value}")
+                            current_key = next_key
+                        else:
+                            # Last value without a new key
+                            new_pairs.append(f"{current_key}={parts[0]}")
+                    
+                    pairs = new_pairs
+                    
+            else:
+                # Standard delimiter splitting
+                pairs = log_content.split(delimiter)
+            
             if len(pairs) > 1:
                 for pair in pairs:
                     if '=' in pair:
                         key, value = pair.split('=', 1)
                         key = key.strip()
                         value = value.strip()
+                        
+                        # Try to detect value type
+                        value_type = "string"
+                        try:
+                            int_val = int(value)
+                            value_type = "int"
+                        except ValueError:
+                            try:
+                                float_val = float(value)
+                                value_type = "float"
+                            except ValueError:
+                                # Check for boolean values
+                                if value.lower() in ('true', 'false'):
+                                    value_type = "bool"
+                        
+                        # Store field with detected type
                         fields[key] = {
-                            "type": "string",
-                            "example": value
+                            "type": value_type,
+                            "example": value,
+                            "original": value
                         }
+                        found_pairs += 1
+        
+        # If we didn't find key=value pairs with standard delimiters,
+        # look for custom formats like key:value or key->value
+        if found_pairs == 0:
+            for separator in [':', '->', '=>']:
+                if separator in log_content:
+                    parts = log_content.split()
+                    for part in parts:
+                        if separator in part:
+                            key, value = part.split(separator, 1)
+                            key = key.strip()
+                            value = value.strip()
+                            fields[key] = {
+                                "type": "string",
+                                "example": value
+                            }
+                            found_pairs += 1
     
     def _extract_space_separated(self, log_content, fields):
         """Extract fields from space-separated values.
@@ -205,12 +326,88 @@ class AggregationManager:
             log_content: Space-separated log string
             fields: Fields dictionary to populate
         """
+        # First try to detect if this is a structured log with standard patterns
+        
+        # Check for timestamp at the beginning (common in many logs)
+        timestamp_patterns = [
+            r'^\d{4}-\d{2}-\d{2}', # ISO date (YYYY-MM-DD)
+            r'^\d{2}:\d{2}:\d{2}', # Time (HH:MM:SS)
+            r'^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}', # Syslog format (Mon DD HH:MM:SS)
+            r'^\d{2}/\d{2}/\d{4}', # Date (MM/DD/YYYY)
+        ]
+        
+        import re
+        has_timestamp = False
+        timestamp_value = ""
+        
+        for pattern in timestamp_patterns:
+            match = re.search(pattern, log_content)
+            if match:
+                has_timestamp = True
+                timestamp_value = match.group(0)
+                break
+        
+        # If we found a timestamp, extract it as a special field
+        if has_timestamp:
+            fields["timestamp"] = {
+                "type": "timestamp",
+                "example": timestamp_value
+            }
+        
+        # Look for log levels
+        log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "WARN", "TRACE", "FATAL"]
+        found_level = None
+        
+        for level in log_levels:
+            if f" {level} " in f" {log_content} ":
+                found_level = level
+                fields["log_level"] = {
+                    "type": "level",
+                    "example": level
+                }
+                break
+        
+        # Now process the remaining content as space-separated fields
         values = log_content.split()
-        for i, value in enumerate(values):
+        
+        # Skip the first fields if we found a timestamp
+        start_idx = 0
+        if has_timestamp:
+            # Skip the timestamp parts (could be multiple tokens)
+            timestamp_parts = timestamp_value.split()
+            start_idx = len(timestamp_parts)
+        
+        # Process each token as a field
+        for i, value in enumerate(values[start_idx:], start_idx):
+            # Skip the log level if we found one
+            if found_level and value == found_level:
+                continue
+                
             field_name = f"field_{i+1}"
+            
+            # Try to detect the value type
+            value_type = "string"
+            try:
+                int_val = int(value)
+                value_type = "int"
+                formatted = f"{int_val:,}"
+            except ValueError:
+                try:
+                    float_val = float(value)
+                    value_type = "float"
+                    formatted = f"{float_val:.2f}"
+                except ValueError:
+                    # Check for boolean values
+                    if value.lower() in ('true', 'false'):
+                        value_type = "bool"
+                        formatted = value
+                    else:
+                        formatted = value
+            
             fields[field_name] = {
-                "type": "string",
-                "example": value
+                "type": value_type,
+                "example": value,
+                "formatted": formatted
             }
     
     def create_policy(self, source_id, selected_fields):

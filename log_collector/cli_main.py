@@ -61,15 +61,16 @@ class CLI:
         clear()
         self._print_header()
         
-        # Add this line to initialize terminal settings
-        self.old_terminal_settings = setup_terminal()
-        
         # Setup signal handler for clean exits
         def signal_handler(sig, frame):
             print("\n\n")
             print(f"{Fore.YELLOW}Ctrl+C detected. Do you want to exit?{ColorStyle.RESET_ALL}")
             try:
-                restore_terminal(self.old_terminal_settings)
+                # Ensure terminal is restored for the prompt
+                if self.old_terminal_settings:
+                    restore_terminal(self.old_terminal_settings)
+                    self.old_terminal_settings = None
+                
                 confirm = prompt("Exit the application? (y/n): ")
                 if confirm.lower() == 'y':
                     print(f"{Fore.CYAN}Cleaning up resources...{ColorStyle.RESET_ALL}")
@@ -78,7 +79,7 @@ class CLI:
                     sys.exit(0)
                 else:
                     print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
-                    # Re-initialize terminal settings after confirm prompt
+                    # Re-initialize terminal settings after continuing
                     self.old_terminal_settings = setup_terminal()
                     return
             except KeyboardInterrupt:
@@ -93,10 +94,7 @@ class CLI:
         
         # Handle authentication if auth_manager is provided
         if self.auth_manager:
-            # Save current terminal settings before authentication flow
-            restore_terminal(self.old_terminal_settings)  # Make sure we start clean
-            
-            # Show login screen
+            # Let login_screen manage its own terminal settings
             authenticated, username, needs_password_change = login_screen(self.auth_manager, self)
             
             if not authenticated:
@@ -106,14 +104,14 @@ class CLI:
             self.authenticated = True
             self.current_user = username
             
-            # Handle forced password change
+            # Handle forced password change - function handles its own terminal settings
             if needs_password_change:
                 password_changed = False
                 while not password_changed:
                     password_changed = change_password_screen(self.auth_manager, username, True, self)
-            
-            # Re-initialize terminal settings after authentication flow
-            self.old_terminal_settings = setup_terminal()
+        
+        # Initialize terminal settings for the main application after authentication
+        self.old_terminal_settings = setup_terminal()
         
         # Start component threads if there are already sources configured
         sources = self.source_manager.get_sources()

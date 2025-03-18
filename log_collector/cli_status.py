@@ -21,7 +21,7 @@ from log_collector.cli_utils import (
     format_bytes
 )
 
-def view_status(source_manager, processor_manager, listener_manager, health_check):
+def view_status(source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None):
     """View system and sources status in real-time until key press.
     
     Args:
@@ -29,6 +29,7 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
         processor_manager: Processor manager instance
         listener_manager: Listener manager instance
         health_check: Health check instance
+        aggregation_manager: Optional aggregation manager instance
     """
     # Detect platform for platform-specific display adjustments
     is_windows = platform.system() == "Windows"
@@ -118,9 +119,9 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                 print(f"\n{Fore.CYAN}Active Sources:{ColorStyle.RESET_ALL}")
                 
                 # Create a fixed-width table (simpler for Linux compatibility)
-                header_line = f"{'Source Name':<20} {'Status':<12} {'Queue':<8} {'Threads':<8} {'Processed':<10} {'Last Activity':<19}"
+                header_line = f"{'Source Name':<20} {'Status':<12} {'Queue':<8} {'Threads':<8} {'Processed':<10} {'Last Activity':<19} {'Template/Agg'}"
                 print(f"\n{Fore.GREEN}{header_line}{ColorStyle.RESET_ALL}")
-                print("-" * 80)  # Fixed width separator
+                print("-" * 100)  # Fixed width separator
                 
                 for source_id, source in sources.items():
                     # Get queue size
@@ -153,8 +154,30 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
                     # Format status display
                     status_display = f"{Fore.GREEN}Active{ColorStyle.RESET_ALL}" if listener_active else f"{Fore.RED}Inactive{ColorStyle.RESET_ALL}"
                     
+                    # Add template status if aggregation manager is available
+                    template_status = ""
+                    if aggregation_manager and source_id in aggregation_manager.templates:
+                        # Get field count
+                        template = aggregation_manager.get_template(source_id)
+                        if template and "fields" in template:
+                            field_count = len(template["fields"])
+                            template_status = f" [T:{field_count}]"
+                    
+                    # Check if aggregation is enabled
+                    aggregation_status = ""
+                    if aggregation_manager:
+                        policy = aggregation_manager.get_policy(source_id)
+                        if policy and policy.get("enabled", False):
+                            aggregation_status = f" {Fore.GREEN}[A]{ColorStyle.RESET_ALL}"
+                    
                     # Simpler fixed-width row for Linux compatibility
-                    print(f"{source_name:<20} {status_display:<12} {queue_size:<8} {active_processors:<8} {processed_count:<10} {last_activity:<19}")
+                    print(f"{source_name:<20} {status_display:<12} {queue_size:<8} {active_processors:<8} {processed_count:<10} {last_activity:<19}{template_status}{aggregation_status}")
+                
+                # Legend for abbreviations
+                if aggregation_manager:
+                    print(f"\n{Fore.CYAN}Legend:{ColorStyle.RESET_ALL}")
+                    print(f"  [T:N] - Template exists with N fields extracted")
+                    print(f"  [A] - Aggregation enabled for this source")
                 
                 # Source details
                 print(f"\n{Fore.CYAN}Source Details:{ColorStyle.RESET_ALL}")

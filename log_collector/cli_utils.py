@@ -13,7 +13,7 @@ from log_collector.config import logger
 init(autoreset=False, strip=False)
 
 def setup_terminal():
-    """Setup terminal for non-blocking input.
+    """Setup terminal for non-blocking input while preserving normal input mode.
     
     Returns:
         Terminal settings to be used for restoration later, or None if N/A
@@ -21,9 +21,11 @@ def setup_terminal():
     try:
         if os.name == 'posix':
             import termios
-            # Save current terminal settings but don't modify them
+            import tty
+            # Save current terminal settings
             old_settings = termios.tcgetattr(sys.stdin)
-            # We won't set raw mode here to preserve normal terminal behavior
+            # We don't modify them here to preserve normal input behavior
+            # Terminal modes will be temporarily changed only during key checks
             return old_settings
         elif os.name == 'nt':
             # No special setup needed for Windows
@@ -31,6 +33,78 @@ def setup_terminal():
     except Exception as e:
         logger.error(f"Error setting up terminal: {e}")
     return None
+
+def is_key_pressed():
+    """Check if a key is pressed without blocking.
+    
+    Returns:
+        bool: True if key pressed, False otherwise
+    """
+    try:
+        if os.name == 'posix':
+            import select
+            import termios
+            import tty
+            
+            # Save current terminal settings
+            old_settings = termios.tcgetattr(sys.stdin)
+            
+            try:
+                # Temporarily set terminal to raw mode for check
+                tty.setraw(sys.stdin.fileno(), termios.TCSANOW)
+                
+                # Check for input with a very short timeout
+                result = select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
+                
+                return result
+            finally:
+                # Always restore terminal settings
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                
+        elif os.name == 'nt':
+            import msvcrt
+            return msvcrt.kbhit()
+    except Exception as e:
+        logger.error(f"Error checking for key press: {e}")
+        # Fallback
+        return False
+    return False
+
+def read_key():
+    """Read a key press.
+    
+    Returns:
+        str: Key pressed or empty string
+    """
+    try:
+        if os.name == 'posix':
+            import termios
+            import tty
+            
+            # Save current terminal settings
+            old_settings = termios.tcgetattr(sys.stdin)
+            
+            try:
+                # Temporarily set terminal to raw mode for reading
+                tty.setraw(sys.stdin.fileno(), termios.TCSANOW)
+                
+                # Read a single character
+                ch = sys.stdin.read(1)
+                
+                return ch
+            finally:
+                # Always restore terminal settings
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                
+        elif os.name == 'nt':
+            import msvcrt
+            if msvcrt.kbhit():
+                return msvcrt.getch().decode('utf-8', errors='ignore')
+    except Exception as e:
+        logger.error(f"Error reading key: {e}")
+        # Fallback
+        pass
+    return ''
 
 def restore_terminal(old_settings):
     """Restore terminal settings.
@@ -45,42 +119,6 @@ def restore_terminal(old_settings):
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
     except Exception as e:
         logger.error(f"Error restoring terminal: {e}")
-
-def is_key_pressed():
-    """Check if a key is pressed without blocking.
-    
-    Returns:
-        bool: True if key pressed, False otherwise
-    """
-    try:
-        if os.name == 'posix':
-            import select
-            return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
-        elif os.name == 'nt':
-            import msvcrt
-            return msvcrt.kbhit()
-    except Exception:
-        # Fallback
-        return False
-    return False
-
-def read_key():
-    """Read a key press.
-    
-    Returns:
-        str: Key pressed or empty string
-    """
-    try:
-        if os.name == 'posix':
-            return sys.stdin.read(1)
-        elif os.name == 'nt':
-            import msvcrt
-            if msvcrt.kbhit():
-                return msvcrt.getch().decode('utf-8', errors='ignore')
-    except Exception:
-        # Fallback
-        pass
-    return ''
 
 def format_timestamp(timestamp):
     """Format timestamp for display.

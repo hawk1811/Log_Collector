@@ -146,7 +146,11 @@ def change_password_screen(auth_manager, username, force_change, cli):
         success, message = auth_manager.change_password(username, current_password, new_password)
         if success:
             print(f"{Fore.GREEN}{message}{ColorStyle.RESET_ALL}")
+            # Add proper terminal restoration
+            from log_collector.cli_utils import restore_terminal, setup_terminal
+            old_settings = setup_terminal()  # Save current settings
             input("Press Enter to continue...")
+            restore_terminal(old_settings)   # Restore before returning
             return True
         else:
             print(f"{Fore.RED}{message}{ColorStyle.RESET_ALL}")

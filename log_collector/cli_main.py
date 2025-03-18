@@ -91,10 +91,15 @@ class CLI:
         
         # Handle authentication if auth_manager is provided
         if self.auth_manager:
+            # Save current terminal settings
+            old_auth_settings = setup_terminal()
+            
             # Show login screen
             authenticated, username, needs_password_change = login_screen(self.auth_manager, self)
             
             if not authenticated:
+                # Restore terminal settings before exiting
+                restore_terminal(old_auth_settings)
                 print(f"{Fore.RED}Authentication failed. Exiting.{ColorStyle.RESET_ALL}")
                 sys.exit(1)
             
@@ -106,6 +111,11 @@ class CLI:
                 password_changed = False
                 while not password_changed:
                     password_changed = change_password_screen(self.auth_manager, username, True, self)
+            
+            # Restore terminal settings after authentication flow
+            restore_terminal(old_auth_settings)
+            # Re-initialize for the main application
+            self.old_terminal_settings = setup_terminal()
         
         # Start component threads if there are already sources configured
         sources = self.source_manager.get_sources()
@@ -206,8 +216,10 @@ class CLI:
         """Clean up resources before exiting."""
         print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
         
-        # Restore terminal settings
-        restore_terminal(self.old_terminal_settings)
+        # Restore terminal settings - move this to top of method
+        if self.old_terminal_settings:
+            restore_terminal(self.old_terminal_settings)
+            self.old_terminal_settings = None
         
         # Stop health check if running
         if hasattr(self.health_check, 'running') and self.health_check.running:

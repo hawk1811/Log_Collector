@@ -13,6 +13,7 @@ from log_collector.processor import ProcessorManager
 from log_collector.listener import LogListener
 from log_collector.health_check import HealthCheck
 from log_collector.aggregation_manager import AggregationManager
+from log_collector.auth import AuthManager
 from log_collector import CLI
 from log_collector.utils import get_version
 

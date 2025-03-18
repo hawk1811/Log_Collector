@@ -74,6 +74,9 @@ def create_aggregation_rule(source_manager, processor_manager, aggregation_manag
         aggregation_manager: Aggregation manager instance
         cli: CLI instance for header
     """
+    # Ensure we're using the updated terminal mode for paste functionality
+    old_settings = None
+    
     clear()
     cli._print_header()
     print(f"{Fore.CYAN}=== Create Aggregation Rule ==={ColorStyle.RESET_ALL}")
@@ -155,10 +158,20 @@ def create_aggregation_rule(source_manager, processor_manager, aggregation_manag
                 print(f"{Fore.RED}No logs available in the queue for this source.{ColorStyle.RESET_ALL}")
                 print("Please enter a sample log manually.")
                 
-                sample_log = prompt(
-                    HTML("<ansicyan>Enter a sample log: </ansicyan>"),
-                    style=cli.prompt_style
-                )
+                print(f"\n{Fore.CYAN}Enter a sample log below. You can paste multi-line content.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.CYAN}Press Enter twice on an empty line when done.{ColorStyle.RESET_ALL}\n")
+                
+                # Collect multi-line input to support pastes
+                lines = []
+                while True:
+                    line = prompt("", style=cli.prompt_style)
+                    if not line and (not lines or not lines[-1]):
+                        # Empty line after another empty line or as first input, we're done
+                        break
+                    lines.append(line)
+                
+                # Join lines for the full sample log
+                sample_log = "\n".join(lines)
                 
                 if not sample_log:
                     print(f"{Fore.RED}Sample log cannot be empty.{ColorStyle.RESET_ALL}")
@@ -169,10 +182,20 @@ def create_aggregation_rule(source_manager, processor_manager, aggregation_manag
         
         elif choice == "2":
             # Enter a sample log manually
-            sample_log = prompt(
-                HTML("<ansicyan>Enter a sample log: </ansicyan>"),
-                style=cli.prompt_style
-            )
+            print(f"\n{Fore.CYAN}Enter a sample log below. You can paste multi-line content.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.CYAN}Press Enter twice on an empty line when done.{ColorStyle.RESET_ALL}\n")
+            
+            # Collect multi-line input to support pastes
+            lines = []
+            while True:
+                line = prompt("", style=cli.prompt_style)
+                if not line and (not lines or not lines[-1]):
+                    # Empty line after another empty line or as first input, we're done
+                    break
+                lines.append(line)
+            
+            # Join lines for the full sample log
+            sample_log = "\n".join(lines)
             
             if not sample_log:
                 print(f"{Fore.RED}Sample log cannot be empty.{ColorStyle.RESET_ALL}")
@@ -202,18 +225,39 @@ def create_aggregation_rule(source_manager, processor_manager, aggregation_manag
         input("Press Enter to continue...")
         return
     
-    print("\nAvailable Fields:")
+    # Display the fields in a more structured format
+    print(f"\n{Fore.CYAN}Available Fields:{ColorStyle.RESET_ALL}")
     field_list = list(template_fields.keys())
+    
+    # Print field info in a table-like format
+    print(f"\n{Fore.GREEN}{'#':<4} {'Field Name':<25} {'Type':<15} {'Value Example':<40}{ColorStyle.RESET_ALL}")
+    print(f"{'-'*4} {'-'*25} {'-'*15} {'-'*40}")
+    
     for i, field_name in enumerate(field_list, 1):
         field_info = template_fields[field_name]
         field_type = field_info.get("type", "unknown")
-        example = field_info.get("example", "")
+        
+        # Get example with formatting if available
+        if "formatted" in field_info:
+            example = field_info.get("formatted", "")
+        else:
+            example = field_info.get("example", "")
+        
+        # Add length info for string fields
+        if field_type == "string" and "length" in field_info:
+            field_type = f"string({field_info['length']})"
+        
+        # Highlight special fields
+        field_name_display = field_name
+        if field_name in ["timestamp", "log_level", "message", "host", "source", "severity"]:
+            field_name_display = f"{Fore.YELLOW}{field_name}{ColorStyle.RESET_ALL}"
         
         # Truncate long examples
-        if len(example) > 30:
-            example = example[:27] + "..."
+        if len(str(example)) > 37:
+            example = str(example)[:34] + "..."
         
-        print(f"{i}. {field_name} ({field_type}) - Example: {example}")
+        # Format the line
+        print(f"{i:<4} {field_name_display:<25} {field_type:<15} {example:<40}")
     
     # Select fields for aggregation
     print("\nEnter the numbers of fields to include in the aggregation rule,")
@@ -361,24 +405,43 @@ def edit_aggregation_rule(source_manager, processor_manager, aggregation_manager
         
         template_fields = template["fields"]
         
-        # Display the fields
+        # Display the fields in a more structured format
         print(f"\n{Fore.CYAN}Available Fields:{ColorStyle.RESET_ALL}")
         field_list = list(template_fields.keys())
+        
+        # Print field info in a table-like format
+        print(f"\n{Fore.GREEN}{'Sel':<4} {'#':<4} {'Field Name':<25} {'Type':<15} {'Value Example':<40}{ColorStyle.RESET_ALL}")
+        print(f"{'-'*4} {'-'*4} {'-'*25} {'-'*15} {'-'*40}")
         
         for i, field_name in enumerate(field_list, 1):
             field_info = template_fields[field_name]
             field_type = field_info.get("type", "unknown")
-            example = field_info.get("example", "")
+            
+            # Get example with formatting if available
+            if "formatted" in field_info:
+                example = field_info.get("formatted", "")
+            else:
+                example = field_info.get("example", "")
+            
+            # Add length info for string fields
+            if field_type == "string" and "length" in field_info:
+                field_type = f"string({field_info['length']})"
+            
+            # Highlight special fields
+            field_name_display = field_name
+            if field_name in ["timestamp", "log_level", "message", "host", "source", "severity"]:
+                field_name_display = f"{Fore.YELLOW}{field_name}{ColorStyle.RESET_ALL}"
             
             # Truncate long examples
-            if len(example) > 30:
-                example = example[:27] + "..."
+            if len(str(example)) > 37:
+                example = str(example)[:34] + "..."
             
             # Mark if field is currently selected
             is_selected = field_name in policy["fields"]
-            selection_mark = "*" if is_selected else " "
+            selection_mark = f"{Fore.GREEN}[*]{ColorStyle.RESET_ALL}" if is_selected else "[ ]"
             
-            print(f"{selection_mark} {i}. {field_name} ({field_type}) - Example: {example}")
+            # Format the line
+            print(f"{selection_mark:<4} {i:<4} {field_name_display:<25} {field_type:<15} {example:<40}")
         
         # Select fields for aggregation
         print("\nEnter the numbers of fields to include in the aggregation rule,")
@@ -420,7 +483,7 @@ def edit_aggregation_rule(source_manager, processor_manager, aggregation_manager
             else:
                 print(f"{Fore.RED}Failed to update aggregation fields.{ColorStyle.RESET_ALL}")
         else:
-            print(f"{Fore.YELLOW}No changes made.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}No changes were made.{ColorStyle.RESET_ALL}")
     
     input("Press Enter to continue...")
   

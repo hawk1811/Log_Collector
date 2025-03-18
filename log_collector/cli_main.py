@@ -69,6 +69,7 @@ class CLI:
             print("\n\n")
             print(f"{Fore.YELLOW}Ctrl+C detected. Do you want to exit?{ColorStyle.RESET_ALL}")
             try:
+                restore_terminal(self.old_terminal_settings)
                 confirm = prompt("Exit the application? (y/n): ")
                 if confirm.lower() == 'y':
                     print(f"{Fore.CYAN}Cleaning up resources...{ColorStyle.RESET_ALL}")

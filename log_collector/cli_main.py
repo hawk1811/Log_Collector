@@ -61,6 +61,9 @@ class CLI:
         clear()
         self._print_header()
         
+        # Add this line to initialize terminal settings
+        self.old_terminal_settings = setup_terminal()
+        
         # Setup signal handler for clean exits
         def signal_handler(sig, frame):
             print("\n\n")

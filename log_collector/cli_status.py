@@ -21,7 +21,7 @@ from log_collector.cli_utils import (
     format_bytes
 )
 
-def view_status(source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None):
+def view_status(source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None, current_user=None):
     """View system and sources status in real-time until key press.
     
     Args:
@@ -30,6 +30,7 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
         listener_manager: Listener manager instance
         health_check: Health check instance
         aggregation_manager: Optional aggregation manager instance
+        current_user: Currently logged in username, if available
     """
     # Detect platform for platform-specific display adjustments
     is_windows = platform.system() == "Windows"
@@ -77,6 +78,10 @@ def view_status(source_manager, processor_manager, listener_manager, health_chec
             
             # Last updated line
             print(f"\nLast updated: {current_time} (refresh #{update_count})")
+            
+            # Display logged in user if available
+            if current_user:
+                print(f"Logged in as: {Fore.GREEN}{current_user}{ColorStyle.RESET_ALL}")
             
             # System Resources section
             print(f"\n{Fore.CYAN}System Resources:{ColorStyle.RESET_ALL}")

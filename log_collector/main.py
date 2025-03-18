@@ -7,12 +7,12 @@ import argparse
 import threading
 from pathlib import Path
 
-from log_collector.aggregation_manager import AggregationManager
 from log_collector.config import logger
 from log_collector.source_manager import SourceManager
 from log_collector.processor import ProcessorManager
 from log_collector.listener import LogListener
 from log_collector.health_check import HealthCheck
+from log_collector.aggregation_manager import AggregationManager
 from log_collector import CLI
 from log_collector.utils import get_version
 
@@ -68,6 +68,8 @@ def main():
         logger.info("Initializing Log Collector...")
         source_manager = SourceManager()
         aggregation_manager = AggregationManager()
+        
+        # Initialize processor manager with the aggregation manager for automatic template creation
         processor_manager = ProcessorManager(source_manager, aggregation_manager)
         listener_manager = LogListener(source_manager, processor_manager)
         health_check = HealthCheck(source_manager, processor_manager)
@@ -97,3 +99,6 @@ def main():
         return 1
     
     return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

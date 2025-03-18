@@ -21,11 +21,12 @@ from log_collector.cli_utils import setup_terminal, restore_terminal
 from log_collector.cli_sources import add_source, manage_sources
 from log_collector.cli_health import configure_health_check
 from log_collector.cli_status import view_status
+from log_collector.cli_auth import login_screen, change_password_screen
 
 class CLI:
     """Command Line Interface for Log Collector."""
     
-    def __init__(self, source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None):
+    def __init__(self, source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None, auth_manager=None):
         """Initialize CLI.
         
         Args:
@@ -34,12 +35,18 @@ class CLI:
             listener_manager: Instance of LogListener
             health_check: Instance of HealthCheck
             aggregation_manager: Optional instance of AggregationManager
+            auth_manager: Optional instance of AuthManager
         """
         self.source_manager = source_manager
         self.processor_manager = processor_manager
         self.listener_manager = listener_manager
         self.health_check = health_check
         self.aggregation_manager = aggregation_manager
+        self.auth_manager = auth_manager
+        
+        # Authentication state
+        self.authenticated = False
+        self.current_user = None
         
         # Define prompt style
         self.prompt_style = Style.from_dict({
@@ -77,6 +84,24 @@ class CLI:
         
         # Register the signal handler for SIGINT (Ctrl+C)
         signal.signal(signal.SIGINT, signal_handler)
+        
+        # Handle authentication if auth_manager is provided
+        if self.auth_manager:
+            # Show login screen
+            authenticated, username, needs_password_change = login_screen(self.auth_manager, self)
+            
+            if not authenticated:
+                print(f"{Fore.RED}Authentication failed. Exiting.{ColorStyle.RESET_ALL}")
+                sys.exit(1)
+            
+            self.authenticated = True
+            self.current_user = username
+            
+            # Handle forced password change
+            if needs_password_change:
+                password_changed = False
+                while not password_changed:
+                    password_changed = change_password_screen(self.auth_manager, username, True, self)
         
         # Start component threads if there are already sources configured
         sources = self.source_manager.get_sources()
@@ -117,15 +142,28 @@ class CLI:
         """Display main menu and handle commands."""
         clear()  # Ensure screen is cleared
         self._print_header()
+        
+        # Show logged in user if authenticated
+        if self.authenticated and self.current_user:
+            print(f"Logged in as: {Fore.GREEN}{self.current_user}{ColorStyle.RESET_ALL}")
+        
         print("\nMain Menu:")
         print("1. Add New Source")
         print("2. Manage Sources")
         print("3. Health Check Configuration")
         print("4. View Status")
-        print("5. Exit")
+        
+        # Add change password option if auth_manager is available
+        if self.auth_manager and self.authenticated:
+            print("5. Change Password")
+            print("6. Exit")
+            max_option = 6
+        else:
+            print("5. Exit")
+            max_option = 5
         
         choice = prompt(
-            HTML("<ansicyan>Choose an option (1-5): </ansicyan>"),
+            HTML(f"<ansicyan>Choose an option (1-{max_option}): </ansicyan>"),
             style=self.prompt_style
         )
         
@@ -136,8 +174,11 @@ class CLI:
         elif choice == "3":
             configure_health_check(self.health_check, self)
         elif choice == "4":
-            view_status(self.source_manager, self.processor_manager, self.listener_manager, self.health_check, self.aggregation_manager)
-        elif choice == "5":
+            view_status(self.source_manager, self.processor_manager, self.listener_manager, self.health_check, self.aggregation_manager, self.current_user)
+        elif choice == "5" and self.auth_manager and self.authenticated:
+            # Change password
+            change_password_screen(self.auth_manager, self.current_user, False, self)
+        elif (choice == "6" and self.auth_manager and self.authenticated) or (choice == "5" and (not self.auth_manager or not self.authenticated)):
             self._exit_application()
             # If we return here, it means the user canceled the exit
             return

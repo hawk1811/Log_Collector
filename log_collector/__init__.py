@@ -7,4 +7,4 @@ from .auth import AuthManager
 from .updater import check_for_updates, restart_application
 
 __version__ = get_version()
-__all__ = 
+__all__ = ['CLI', 'get_version', 'AuthManager', 'check_for_updates', 'restart_application']

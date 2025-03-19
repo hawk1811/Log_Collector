@@ -272,34 +272,38 @@ class AuthManager:
     def change_password(self, username, old_password, new_password):
         """Change a user's password."""
         with self.lock:
-            try:
-                # First authenticate with old password
-                auth_result, auth_message, _ = self.authenticate(username, old_password)
-                if not auth_result:
-                    return False, auth_message
+            logger.info(f"Attempting password change for user: {username}")  # Debugging log
     
-                # Validate new password
-                valid, message = self.validate_password(new_password)
-                if not valid:
-                    return False, message
+            # First authenticate with old password
+            auth_result, auth_message, _ = self.authenticate(username, old_password)
+            if not auth_result:
+                logger.warning(f"Password change failed: {auth_message}")
+                return False, auth_message
     
-                # Change password
-                salt = self._generate_salt()
-                hashed_password = self._hash_password(new_password, salt)
+            # Validate new password
+            valid, message = self.validate_password(new_password)
+            if not valid:
+                logger.warning(f"New password validation failed: {message}")
+                return False, message
     
-                self.users[username]["password_hash"] = hashed_password
-                self.users[username]["salt"] = salt
-                self.users[username]["force_change"] = False
-                self.users[username]["last_changed"] = time.time()
+            # Change password
+            salt = self._generate_salt()
+            hashed_password = self._hash_password(new_password, salt)
     
-                if not self._save_auth_data():
-                    raise IOError("Failed to save authentication data.")
+            self.users[username]["password_hash"] = hashed_password
+            self.users[username]["salt"] = salt
+            self.users[username]["force_change"] = False
+            self.users[username]["last_changed"] = time.time()
     
-                return True, "Password changed successfully"
-            
-            except Exception as e:
-                logger.error(f"Password change error: {e}")
-                return False, "Unexpected error while changing password."
+            logger.info("Password successfully changed. Attempting to save to file.")
+    
+            if not self._save_auth_data():
+                logger.error("Failed to save new password to auth.json")
+                return False, "Error saving new password"
+    
+            logger.info("Password change successful and saved.")
+            return True, "Password changed successfully"
+
 
     
     def reset_password(self, username, new_password=None):

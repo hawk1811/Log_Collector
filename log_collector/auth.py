@@ -75,12 +75,12 @@ class AuthManager:
                 "lockouts": self.lockouts
             }
     
-            logger.info(f"Saving auth data: {json.dumps(auth_data, indent=2)}")  # Debugging line
+            logger.info(f"Before saving, auth.json contains: {json.dumps(auth_data, indent=2)}")
     
             with open(AUTH_FILE, "w") as f:
                 json.dump(auth_data, f, indent=2)
     
-            logger.info("Authentication data saved successfully.")  # Confirm successful save
+            logger.info("Authentication data saved successfully.")
             return True
         except IOError as e:
             logger.error(f"IOError saving authentication data: {e}")
@@ -88,6 +88,7 @@ class AuthManager:
         except Exception as e:
             logger.error(f"Unexpected error saving authentication data: {e}")
             return False
+
 
     
     def _initialize_default_user(self):

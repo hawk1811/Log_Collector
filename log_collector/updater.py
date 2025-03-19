@@ -343,10 +343,26 @@ def restart_application():
     
     This function does not return as it replaces the current process.
     """
-    python = sys.executable
-    
-    # Add restart flag to indicate this is a restart after update
-    if "--restart" not in sys.argv:
-        sys.argv.insert(1, "--restart")
-    
-    os.execl(python, python, *sys.argv)
+    # Check if we're running from an installed executable or script
+    if sys.argv[0].lower().endswith('.py'):
+        # Running as a Python script, use sys.executable
+        python = sys.executable
+        
+        # Add restart flag to indicate this is a restart after update
+        if "--restart" not in sys.argv:
+            sys.argv.insert(1, "--restart")
+        
+        os.execl(python, python, *sys.argv)
+    else:
+        # Running as an installed executable (like 'log_collector')
+        # Just use the command name without the Python interpreter
+        cmd = sys.argv[0]
+        
+        # Add restart flag to indicate this is a restart after update
+        args = sys.argv[1:]
+        if "--restart" not in args:
+            args.insert(0, "--restart")
+        
+        # Use os.execvp which searches PATH for the executable
+        logger.info(f"Restarting with command: {cmd} {' '.join(args)}")
+        os.execvp(cmd, [cmd] + args)

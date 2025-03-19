@@ -850,7 +850,7 @@ class AggregationManager:
         """
         return self.policies.get(source_id)
     
-	def get_template(self, source_id):
+    def get_template(self, source_id):
         """Get a log template.
         
         Args:

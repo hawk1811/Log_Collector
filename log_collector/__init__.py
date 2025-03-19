@@ -1,5 +1,5 @@
 """
-Log Collector - High-performance log collection and processing system.
+Log Collector - High-performance log collection and processing system test.
 """
 from .utils import get_version
 from .cli_main import CLI

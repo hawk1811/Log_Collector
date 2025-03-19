@@ -15,6 +15,7 @@ from colorama import init, Fore, Style as ColorStyle
 from log_collector.updater import check_for_updates, restart_application
 
 
+
 # Initialize colorama for cross-platform colored terminal output
 init()
 
@@ -197,7 +198,12 @@ class CLI:
             # Check for updates
             should_restart = check_for_updates(self)
             if should_restart:
+                print(f"\n{Fore.GREEN}Update successful! The application will now restart...{ColorStyle.RESET_ALL}")
+                print(f"{Fore.CYAN}Please wait...{ColorStyle.RESET_ALL}")
+                time.sleep(2)  # Give user time to read the message
+                
                 self._clean_exit()
+                # After clean exit, restart the application
                 restart_application()
         elif (choice == "7" and self.auth_manager and self.authenticated) or (choice == "6" and (not self.auth_manager or not self.authenticated)):
             self._exit_application()

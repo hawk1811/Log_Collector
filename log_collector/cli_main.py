@@ -12,6 +12,8 @@ from prompt_toolkit.shortcuts import clear
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 from colorama import init, Fore, Style as ColorStyle
+from log_collector.updater import check_for_updates, restart_application
+
 
 # Initialize colorama for cross-platform colored terminal output
 init()
@@ -167,11 +169,13 @@ class CLI:
         # Add change password option if auth_manager is available
         if self.auth_manager and self.authenticated:
             print("5. Change Password")
+            print("6. Check for Updates")
+            print("7. Exit")
+            max_option = 7
+        else:
+            print("5. Check for Updates")
             print("6. Exit")
             max_option = 6
-        else:
-            print("5. Exit")
-            max_option = 5
         
         choice = prompt(
             HTML(f"<ansicyan>Choose an option (1-{max_option}): </ansicyan>"),
@@ -190,6 +194,12 @@ class CLI:
             # Change password
             change_password_screen(self.auth_manager, self.current_user, False, self)
         elif (choice == "6" and self.auth_manager and self.authenticated) or (choice == "5" and (not self.auth_manager or not self.authenticated)):
+            # Check for updates
+            should_restart = check_for_updates(self)
+            if should_restart:
+                self._clean_exit()
+                restart_application()
+        elif (choice == "7" and self.auth_manager and self.authenticated) or (choice == "6" and (not self.auth_manager or not self.authenticated)):
             self._exit_application()
             # If we return here, it means the user canceled the exit
             return

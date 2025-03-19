@@ -25,15 +25,17 @@ MAX_FLUSH_INTERVAL = 60
 class ProcessorManager:
     """Manages log processing queues and worker threads."""
     
-    def __init__(self, source_manager, aggregation_manager=None):
+    def __init__(self, source_manager, aggregation_manager=None, filter_manager=None):
         """Initialize the processor manager.
         
         Args:
             source_manager: Instance of SourceManager to access source configs
             aggregation_manager: Optional instance of AggregationManager for log aggregation
+            filter_manager: Optional instance of FilterManager for log filtering
         """
         self.source_manager = source_manager
         self.aggregation_manager = aggregation_manager
+        self.filter_manager = filter_manager
         self.queues = {}  # source_id -> queue mapping
         self.processors = {}  # source_id -> processor thread mapping
         self.running = False
@@ -47,6 +49,10 @@ class ProcessorManager:
         # Log immediate template creation for new sources
         if aggregation_manager:
             logger.info("Aggregation manager is available - will auto-create templates from first logs")
+            
+        # Log filter availability
+        if filter_manager:
+            logger.info("Filter manager is available - will apply filters to incoming logs")
     
     def start(self):
         """Start all processor threads."""
@@ -245,6 +251,15 @@ class ProcessorManager:
                     
                     # Get a log if available
                     log_str = self.queues[source_id].get(timeout=wait_time)
+                    
+                    # Apply filter if enabled
+                    if self.filter_manager:
+                        # Apply filter - if returns False, log should be filtered out
+                        if not self.filter_manager.apply_filters(log_str, source_id):
+                            # Log is filtered out, don't add to batch
+                            self.queues[source_id].task_done()
+                            continue
+                    
                     batch.append(log_str)
                     self.queues[source_id].task_done()
                     last_activity_time = time.time()  # Update activity timestamp
@@ -253,6 +268,15 @@ class ProcessorManager:
                     while len(batch) < batch_size:
                         try:
                             log_str = self.queues[source_id].get_nowait()
+                            
+                            # Apply filter if enabled
+                            if self.filter_manager:
+                                # Apply filter - if returns False, log should be filtered out
+                                if not self.filter_manager.apply_filters(log_str, source_id):
+                                    # Log is filtered out, don't add to batch
+                                    self.queues[source_id].task_done()
+                                    continue
+                                    
                             batch.append(log_str)
                             self.queues[source_id].task_done()
                         except queue.Empty:

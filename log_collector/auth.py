@@ -271,45 +271,50 @@ class AuthManager:
     
     def change_password(self, username, old_password, new_password):
         """Change a user's password."""
+        logger.info(f"Starting password change for user: {username}")
+        
         with self.lock:
-            logger.info(f"Attempting password change for user: {username}")  # Debugging log
+            logger.info(f"Acquired lock for password change: {username}")
         
             # First authenticate with old password
+            logger.info(f"Authenticating user for password change: {username}")
             auth_result, auth_message, _ = self.authenticate(username, old_password)
             if not auth_result:
                 logger.warning(f"Password change failed: {auth_message}")
                 return False, auth_message
+            
+            logger.info(f"Initial authentication successful for: {username}")
         
             # Validate new password
+            logger.info(f"Validating new password for: {username}")
             valid, message = self.validate_password(new_password)
             if not valid:
                 logger.warning(f"New password validation failed: {message}")
                 return False, message
+            
+            logger.info(f"New password validation successful for: {username}")
         
             # Change password
+            logger.info(f"Generating new password hash for: {username}")
             salt = self._generate_salt()
             hashed_password = self._hash_password(new_password, salt)
-        
-            # Verify old password before saving new one
-            auth_result, _, _ = self.authenticate(username, old_password)
-            if not auth_result:
-                logger.warning("Password change aborted: Incorrect old password")
-                return False, "Incorrect current password"
             
+            logger.info(f"Storing new password hash for: {username}")
             # Store new password hash
             self.users[username]["password_hash"] = hashed_password
             self.users[username]["salt"] = salt
             self.users[username]["force_change"] = False
             self.users[username]["last_changed"] = time.time()
                 
-            logger.info(f"New password set for user: {username}")
+            logger.info(f"About to save new password to auth.json for: {username}")
             
             # Save changes to auth.json
-            if not self._save_auth_data():
-                logger.error("Failed to save new password to auth.json")
+            save_result = self._save_auth_data()
+            if not save_result:
+                logger.error(f"Failed to save new password to auth.json for: {username}")
                 return False, "Error saving new password"
             
-            logger.info("Password change successful and saved.")
+            logger.info(f"Password change successful and saved for: {username}")
             return True, "Password changed successfully"
 
 

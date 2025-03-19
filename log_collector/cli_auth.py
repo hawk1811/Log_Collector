@@ -192,7 +192,7 @@ def change_password_screen(auth_manager, username, force_change, cli):
         
         print(f"{Fore.RED}Too many failed attempts. Exiting password change.{ColorStyle.RESET_ALL}")
         input("Press Enter to return to login screen...")
-        return True  # Ensure the flow doesn't get stuck
+        return False  # Ensure the flow doesn't get stuck
 
 
 

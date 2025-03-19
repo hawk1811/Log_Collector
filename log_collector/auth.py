@@ -273,23 +273,23 @@ class AuthManager:
         """Change a user's password."""
         with self.lock:
             logger.info(f"Attempting password change for user: {username}")  # Debugging log
-    
+        
             # First authenticate with old password
             auth_result, auth_message, _ = self.authenticate(username, old_password)
             if not auth_result:
                 logger.warning(f"Password change failed: {auth_message}")
                 return False, auth_message
-    
+        
             # Validate new password
             valid, message = self.validate_password(new_password)
             if not valid:
                 logger.warning(f"New password validation failed: {message}")
                 return False, message
-    
+        
             # Change password
             salt = self._generate_salt()
             hashed_password = self._hash_password(new_password, salt)
-    
+        
             # Verify old password before saving new one
             auth_result, _, _ = self.authenticate(username, old_password)
             if not auth_result:
@@ -301,8 +301,7 @@ class AuthManager:
             self.users[username]["salt"] = salt
             self.users[username]["force_change"] = False
             self.users[username]["last_changed"] = time.time()
-
-            
+                
             logger.info(f"New password set for user: {username}")
             
             # Save changes to auth.json
@@ -310,10 +309,6 @@ class AuthManager:
                 logger.error("Failed to save new password to auth.json")
                 return False, "Error saving new password"
             
-            logger.info("Password change successful and saved.")
-            return True, "Password changed successfully"
-
-    
             logger.info("Password change successful and saved.")
             return True, "Password changed successfully"
 

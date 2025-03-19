@@ -878,7 +878,7 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
                 create_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
         elif has_filtering and choice == str(filter_option):
             # Manage filter rules
-            if has_template:
+            if aggregation_manager and source_id in aggregation_manager.templates:
                 from log_collector.cli_filters import manage_filter_rules
                 manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli)
             else:
@@ -981,8 +981,54 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli,
             from log_collector.cli_aggregation import manage_aggregation_rules
             manage_aggregation_rules(source_manager, processor_manager, aggregation_manager, cli)
         elif choice.upper() == "F" and filter_manager:
-            from log_collector.cli_filters import manage_filter_rules
-            manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli)
+            # First select which source to manage filters for
+            clear()
+            cli._print_header()
+            print(f"{Fore.CYAN}=== Select Source for Filter Management ==={ColorStyle.RESET_ALL}")
+            
+            # Only show sources with templates
+            available_sources = {}
+            for source_id, source in sources.items():
+                if aggregation_manager and source_id in aggregation_manager.templates:
+                    available_sources[source_id] = source
+            
+            if not available_sources:
+                print(f"{Fore.YELLOW}No sources with log templates available.{ColorStyle.RESET_ALL}")
+                print("Wait for logs to be received before configuring filters.")
+                input("Press Enter to continue...")
+                continue
+            
+            # Show available sources
+            print("\nSources with available templates:")
+            for i, (source_id, source) in enumerate(available_sources.items(), 1):
+                filter_count = len(filter_manager.get_source_filters(source_id))
+                filter_info = f" ({filter_count} filters)" if filter_count > 0 else ""
+                print(f"{i}. {source['source_name']}{filter_info}")
+            
+            print("\n0. Cancel")
+            
+            # Get user selection
+            src_choice = prompt(
+                HTML("<ansicyan>Select a source: </ansicyan>"),
+                style=cli.prompt_style
+            )
+            
+            if src_choice == "0":
+                continue
+                
+            try:
+                index = int(src_choice) - 1
+                if 0 <= index < len(available_sources):
+                    source_id = list(available_sources.keys())[index]
+                    # Now call filter management with the selected source
+                    from log_collector.cli_filters import manage_filter_rules
+                    manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli, source_id)
+                else:
+                    print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                    input("Press Enter to continue...")
+            except ValueError:
+                print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
         else:
             try:
                 index = int(choice) - 1

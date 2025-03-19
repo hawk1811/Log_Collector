@@ -139,9 +139,10 @@ def change_password_screen(auth_manager, username, force_change, cli):
                 attempts += 1
         
         if attempts == max_attempts:
-            print(f"{Fore.RED}Too many failed attempts. Returning to login.{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")
-            return False  # Exit if the current password is incorrect too many times
+            print(f"{Fore.RED}Too many failed attempts. Exiting password change.{ColorStyle.RESET_ALL}")
+            input("Press Enter to return to login screen...")
+            return False  # Properly return False to avoid getting stuck
+
 
         
         # Get new password

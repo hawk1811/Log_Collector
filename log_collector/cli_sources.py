@@ -717,7 +717,8 @@ def delete_aggregation_rule(source_id, source_manager, aggregation_manager, cli)
     
     input("Press Enter to continue...")
 
-def manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
+def manage_source(source_id, source_manager, processor_manager, listener_manager, cli, 
+                 aggregation_manager=None, filter_manager=None):
     """Manage a specific source.
     
     Args:
@@ -727,6 +728,7 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
         listener_manager: Listener manager instance
         cli: CLI instance for style and header
         aggregation_manager: Optional aggregation manager instance
+        filter_manager: Optional filter manager instance
     """
     while True:
         clear()
@@ -769,8 +771,26 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
                 print(f"{Fore.CYAN}Aggregation Fields:{ColorStyle.RESET_ALL} {fields}")
             else:
                 print(f"\n{Fore.CYAN}Aggregation Status:{ColorStyle.RESET_ALL} Not Configured")
+        
+        # Display filter status if available
+        if filter_manager:
+            filter_rules = filter_manager.get_source_filters(source_id)
+            if filter_rules:
+                enabled_count = sum(1 for rule in filter_rules if rule.get("enabled", True))
+                print(f"\n{Fore.CYAN}Filter Rules:{ColorStyle.RESET_ALL} {enabled_count} active filters out of {len(filter_rules)} total")
+                
+                # Show first 2 filter rules as preview
+                preview_count = min(2, len(filter_rules))
+                if preview_count > 0:
+                    print(f"{Fore.CYAN}Active Filters:{ColorStyle.RESET_ALL}")
+                    for i, rule in enumerate(filter_rules[:preview_count]):
+                        if rule.get("enabled", True):
+                            print(f"  - Field: {rule['field']} = \"{rule['value']}\"")
+            else:
+                print(f"\n{Fore.CYAN}Filter Rules:{ColorStyle.RESET_ALL} None configured")
             
-            # Display template information
+        # Display template information if available
+        if aggregation_manager:
             if has_template:
                 template = aggregation_manager.get_template(source_id)
                 if template and "fields" in template:
@@ -812,13 +832,28 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
         print("\nOptions:")
         print("1. Edit Source")
         print("2. Delete Source")
-        if aggregation_manager:
-            print("3. Manage Aggregation Rules")
-            print("4. View Log Template Fields")
-            print("5. Delete Log Template")
-            print("6. Return to Sources List")
-        else:
-            print("3. Return to Sources List")
+        
+        # Build menu based on available components
+        has_aggregation = aggregation_manager is not None
+        has_filtering = filter_manager is not None
+        option_count = 3
+        
+        if has_aggregation:
+            print(f"{option_count}. Manage Aggregation Rules")
+            option_count += 1
+            
+        if has_filtering:
+            print(f"{option_count}. Manage Filter Rules")
+            filter_option = option_count
+            option_count += 1
+        
+        if has_aggregation:
+            print(f"{option_count}. View Log Template Fields")
+            option_count += 1
+            print(f"{option_count}. Delete Log Template")
+            option_count += 1
+        
+        print(f"{option_count}. Return to Sources List")
         
         choice = prompt(
             HTML("<ansicyan>Choose an option: </ansicyan>"),
@@ -830,7 +865,7 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
         elif choice == "2":
             delete_source(source_id, source_manager, processor_manager, listener_manager)
             return
-        elif choice == "3" and aggregation_manager:
+        elif choice == "3" and has_aggregation:
             from log_collector.cli_aggregation import create_aggregation_rule, edit_aggregation_rule
             policy = aggregation_manager.get_policy(source_id)
             if policy:
@@ -839,13 +874,23 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
             else:
                 # Create new rule
                 create_aggregation_rule(source_manager, processor_manager, aggregation_manager, cli)
-        elif choice == "4" and aggregation_manager:
+        elif has_filtering and choice == str(filter_option):
+            # Manage filter rules
+            if has_template:
+                from log_collector.cli_filters import manage_filter_rules
+                manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli)
+            else:
+                print(f"{Fore.YELLOW}No log template available. Wait for logs to be received.{ColorStyle.RESET_ALL}")
+                input("Press Enter to continue...")
+        elif (choice == "4" and has_aggregation and not has_filtering) or \
+             (choice == "5" and has_aggregation and has_filtering):
             # View log template fields
             view_template_fields(source_id, source_manager, aggregation_manager, cli)
-        elif choice == "5" and aggregation_manager:
+        elif (choice == "5" and has_aggregation and not has_filtering) or \
+             (choice == "6" and has_aggregation and has_filtering):
             # Delete log template
             delete_template(source_id, source_manager, aggregation_manager, cli)
-        elif (choice == "6" and aggregation_manager) or (choice == "3" and not aggregation_manager):
+        elif choice == str(option_count):
             return
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")

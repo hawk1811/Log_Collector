@@ -153,11 +153,27 @@ class AggregationManager:
             except json.JSONDecodeError:
                 pass
             
-            # Try to parse as key=value pairs
+            # Try to parse based on format patterns
             if "=" in log_content:
+                # Key=value format
                 self._extract_key_value_pairs(log_content, fields)
+            elif ":" in log_content and not log_content.strip().startswith("{"):
+                # Key: value format (but not JSON)
+                self._extract_colon_separated(log_content, fields)
+            elif "\t" in log_content:
+                # Tab-separated format
+                self._extract_delimited(log_content, "\t", fields)
+            elif ";" in log_content:
+                # Semicolon-separated format
+                self._extract_delimited(log_content, ";", fields)
+            elif "," in log_content and not ('"' in log_content and ',' in log_content):
+                # Comma-separated format (but avoid CSV with quotes)
+                self._extract_delimited(log_content, ",", fields)
+            elif "|" in log_content:
+                # Pipe-separated format
+                self._extract_delimited(log_content, "|", fields)
             else:
-                # Space-separated values
+                # Space-separated values or free-form text
                 self._extract_space_separated(log_content, fields)
         
         return fields
@@ -231,7 +247,7 @@ class AggregationManager:
                     }
     
     def _extract_key_value_pairs(self, log_content, fields):
-        """Extract fields from key=value pairs format.
+        """Extract fields from key=value pairs format with enhanced delimiter detection.
         
         Args:
             log_content: Log string with key=value pairs
@@ -248,7 +264,8 @@ class AggregationManager:
             (r'\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2})?)\b', 'ISO8601'),
             (r'\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b', 'datetime'),
             (r'\b(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\b', 'MM/DD/YYYY'),
-            (r'\b(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\b', 'Syslog')
+            (r'\b(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\b', 'Syslog'),
+            (r'\b(\d{2}-\w{3}-\d{4}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b', 'DD-MMM-YYYY')
         ]
         
         for pattern, time_format in timestamp_patterns:
@@ -263,18 +280,32 @@ class AggregationManager:
                 }
                 break
         
+        # Look for log levels
+        log_level_pattern = r'\b(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL|TRACE)\b'
+        level_match = re.search(log_level_pattern, log_content, re.IGNORECASE)
+        if level_match:
+            level = level_match.group(1).upper()
+            fields["log_level"] = {
+                "type": "level",
+                "example": level,
+                "formatted": level
+            }
+        
         # Try to detect the primary delimiter by counting occurrences
         delimiter_counts = {}
-        for delimiter in [' ', ',', ';', '|', '\t']:
+        for delimiter in [' ', ',', ';', '|', '\t', ' = ']:
             delimiter_counts[delimiter] = log_content.count(delimiter)
         
         # Sort delimiters by count (most common first)
         sorted_delimiters = sorted(delimiter_counts.items(), key=lambda x: x[1], reverse=True)
         
-        # Try each delimiter, starting with the most common
+        # Define all possible key-value separators to try
+        kv_separators = ['=', ':', '->', '=>', ' - ']
+        
+        # Try each delimiter/separator combination
         for delimiter, _ in sorted_delimiters:
-            if delimiter == ' ' and ' = ' in log_content:
-                # Special case for space-separated logs with space around equals
+            if delimiter == ' = ':
+                # Special case for space around equals
                 pairs = log_content.split(' = ')
                 if len(pairs) > 1:
                     # Reconstruct into key=value pairs with proper splitting
@@ -293,142 +324,284 @@ class AggregationManager:
                             new_pairs.append(f"{current_key}={parts[0]}")
                     
                     pairs = new_pairs
+                    kv_separator = '='  # Using equals as separator
                     
+                    for pair in pairs:
+                        key, value = pair.split(kv_separator, 1)
+                        self._add_key_value_field(key.strip(), value.strip(), fields)
+                        found_pairs += 1
+                    
+                    # If we found pairs, we're done
+                    if found_pairs > 0:
+                        return
             else:
                 # Standard delimiter splitting
-                pairs = log_content.split(delimiter)
-            
-            if len(pairs) > 1:
-                for pair in pairs:
-                    if '=' in pair:
-                        key, value = pair.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        
-                        # Skip empty keys or values
-                        if not key or not value:
-                            continue
-                        
-                        # Try to detect value type
-                        value_type = "string"
-                        formatted = value
-                        
-                        try:
-                            int_val = int(value)
-                            value_type = "int"
-                            formatted = f"{int_val:,}"
-                        except ValueError:
-                            try:
-                                float_val = float(value)
-                                value_type = "float"
-                                formatted = f"{float_val:.2f}"
-                            except ValueError:
-                                # Check for boolean values
-                                if value.lower() in ('true', 'false'):
-                                    value_type = "bool"
-                                    formatted = value
-                                elif value.lower() in ('yes', 'no'):
-                                    value_type = "bool"
-                                    formatted = "true" if value.lower() == "yes" else "false"
-                                elif key.lower() in ('time', 'timestamp', 'date'):
-                                    value_type = "timestamp"
-                                    formatted = value
-                                elif key.lower() in ('level', 'severity', 'loglevel'):
-                                    value_type = "level"
-                                    formatted = value
-                                else:
-                                    # If the value is longer than 40 chars, truncate it for display
-                                    if len(formatted) > 40:
-                                        formatted = formatted[:37] + "..."
-                        
-                        # Store field with detected type
-                        fields[key] = {
-                            "type": value_type,
-                            "example": value,
-                            "formatted": formatted,
-                            "original": value
-                        }
-                        found_pairs += 1
-        
-        # If we didn't find key=value pairs with standard delimiters,
-        # look for custom formats like key:value or key->value
-        if found_pairs == 0:
-            for separator in [':', '->', '=>']:
-                if separator in log_content:
-                    # Try whole-string pattern first (key: value)
-                    whole_pattern = re.findall(r'(\w+)\s*' + re.escape(separator) + r'\s*([^' + re.escape(separator) + r']+)', log_content)
-                    if whole_pattern:
-                        for key, value in whole_pattern:
-                            key = key.strip()
-                            value = value.strip()
-                            
-                            # Skip empty keys or values
-                            if not key or not value:
-                                continue
-                                
-                            # Try to determine value type
-                            value_type = "string"
-                            formatted = value
-                            
-                            try:
-                                int_val = int(value)
-                                value_type = "int"
-                                formatted = f"{int_val:,}"
-                            except ValueError:
-                                try:
-                                    float_val = float(value)
-                                    value_type = "float"
-                                    formatted = f"{float_val:.2f}"
-                                except ValueError:
-                                    # If the value is longer than 40 chars, truncate it for display
-                                    if len(formatted) > 40:
-                                        formatted = formatted[:37] + "..."
-                                
-                            fields[key] = {
-                                "type": value_type,
-                                "example": value,
-                                "formatted": formatted
-                            }
-                            found_pairs += 1
-                    else:
-                        # Try token-by-token approach
-                        parts = log_content.split()
-                        for part in parts:
-                            if separator in part:
-                                key, value = part.split(separator, 1)
+                parts = log_content.split(delimiter)
+                
+                # Try each key-value separator with this delimiter
+                for kv_separator in kv_separators:
+                    temp_found = 0
+                    
+                    for part in parts:
+                        part = part.strip()
+                        if kv_separator in part:
+                            # Split at first occurrence only
+                            key_value = part.split(kv_separator, 1)
+                            if len(key_value) == 2:
+                                key, value = key_value
                                 key = key.strip()
                                 value = value.strip()
                                 
                                 # Skip empty keys or values
                                 if not key or not value:
                                     continue
-                                    
-                                fields[key] = {
-                                    "type": "string",
-                                    "example": value,
-                                    "formatted": value if len(value) < 40 else value[:37] + "..."
-                                }
-                                found_pairs += 1
+                                
+                                self._add_key_value_field(key, value, fields)
+                                temp_found += 1
+                    
+                    # If this separator worked well, use it
+                    if temp_found > 0:
+                        found_pairs += temp_found
+                        # Don't break yet, try other separators with same delimiter
+                
+                # If we found pairs with this delimiter, move to next
+                if found_pairs > 0:
+                    continue
+        
+        # If we didn't find key=value pairs with standard methods,
+        # look for patterns in the form of multi-line "key: value"
+        if found_pairs == 0:
+            multi_line_pattern = re.compile(r'^([A-Za-z][A-Za-z0-9_\-\.]*)\s*[:=]\s*(.+?)$', re.MULTILINE)
+            matches = multi_line_pattern.findall(log_content)
+            
+            for key, value in matches:
+                key = key.strip()
+                value = value.strip()
+                
+                # Skip empty keys or values
+                if not key or not value:
+                    continue
+                    
+                self._add_key_value_field(key, value, fields)
+                found_pairs += 1
         
         # If there's still no fields found, try to find field=value patterns within tokens
         if found_pairs == 0:
-            tokens = log_content.split()
-            for token in tokens:
-                if '=' in token and not token.startswith('=') and not token.endswith('='):
-                    key, value = token.split('=', 1)
-                    key = key.strip()
-                    value = value.strip()
+            # This will match patterns like field1=value1;field2=value2 or field1="value1",field2="value2"
+            pattern = re.compile(r'([A-Za-z][A-Za-z0-9_\-\.]*)=(?:"([^"]*)"|([^,;\s]*))')
+            matches = pattern.findall(log_content)
+            
+            for match in matches:
+                key = match[0].strip()
+                # Value is either in group 1 (quoted) or group 2 (unquoted)
+                value = match[1] if match[1] else match[2]
+                value = value.strip()
+                
+                # Skip empty keys or values
+                if not key or not value:
+                    continue
                     
-                    # Skip empty keys or values
-                    if not key or not value:
-                        continue
-                        
-                    fields[key] = {
-                        "type": "string",
+                self._add_key_value_field(key, value, fields)
+                found_pairs += 1
+    
+    def _add_key_value_field(self, key, value, fields):
+        """Helper method to add a key-value pair to fields with type detection.
+        
+        Args:
+            key: Field key
+            value: Field value
+            fields: Fields dictionary to populate
+        """
+        # Try to detect value type
+        value_type = "string"
+        formatted = value
+        
+        try:
+            int_val = int(value)
+            value_type = "int"
+            formatted = f"{int_val:,}"
+        except ValueError:
+            try:
+                float_val = float(value)
+                value_type = "float"
+                formatted = f"{float_val:.2f}"
+            except ValueError:
+                # Check for boolean values
+                if value.lower() in ('true', 'false'):
+                    value_type = "bool"
+                    formatted = value
+                elif value.lower() in ('yes', 'no'):
+                    value_type = "bool"
+                    formatted = "true" if value.lower() == "yes" else "false"
+                elif key.lower() in ('time', 'timestamp', 'date'):
+                    value_type = "timestamp"
+                    formatted = value
+                elif key.lower() in ('level', 'severity', 'loglevel'):
+                    value_type = "level"
+                    formatted = value
+                else:
+                    # If the value is longer than 40 chars, truncate it for display
+                    if len(formatted) > 40:
+                        formatted = formatted[:37] + "..."
+        
+        # Store field with detected type
+        fields[key] = {
+            "type": value_type,
+            "example": value,
+            "formatted": formatted,
+            "original": value
+        }
+    
+    def _extract_delimited(self, log_content, delimiter, fields):
+        """Extract fields from a delimited string.
+        
+        Args:
+            log_content: Log string with delimited values
+            delimiter: Delimiter character
+            fields: Fields dictionary to populate
+        """
+        # Check if the first line looks like a header
+        lines = log_content.strip().split("\n")
+        
+        if len(lines) > 1:
+            # Multi-line delimited file, treat first line as header
+            header = lines[0].split(delimiter)
+            data = lines[1].split(delimiter)
+            
+            # Match header fields with data
+            for i, field_name in enumerate(header):
+                field_name = field_name.strip()
+                if not field_name:
+                    continue
+                    
+                if i < len(data):
+                    value = data[i].strip()
+                    
+                    # Try to determine value type
+                    value_type = "string"
+                    formatted = value
+                    
+                    try:
+                        int_val = int(value)
+                        value_type = "int"
+                        formatted = f"{int_val:,}"
+                    except ValueError:
+                        try:
+                            float_val = float(value)
+                            value_type = "float"
+                            formatted = f"{float_val:.2f}"
+                        except ValueError:
+                            if value.lower() in ('true', 'false', 'yes', 'no'):
+                                value_type = "bool"
+                            elif field_name.lower() in ('time', 'timestamp', 'date'):
+                                value_type = "timestamp"
+                            elif field_name.lower() in ('level', 'severity', 'loglevel'):
+                                value_type = "level"
+                            
+                            # If the value is longer than 40 chars, truncate it for display
+                            if len(formatted) > 40:
+                                formatted = formatted[:37] + "..."
+                    
+                    fields[field_name] = {
+                        "type": value_type,
                         "example": value,
-                        "formatted": value if len(value) < 40 else value[:37] + "..."
+                        "formatted": formatted
                     }
-                    found_pairs += 1
+        else:
+            # Single line delimited string
+            parts = log_content.split(delimiter)
+            
+            # Process as unnamed fields
+            for i, value in enumerate(parts):
+                value = value.strip()
+                if not value:
+                    continue
+                    
+                field_name = f"field_{i+1}"
+                
+                # Check if value contains a key=value pattern
+                if "=" in value and not value.startswith("=") and not value.endswith("="):
+                    key, val = value.split("=", 1)
+                    field_name = key.strip()
+                    value = val.strip()
+                
+                # Try to determine value type
+                value_type = "string"
+                formatted = value
+                
+                try:
+                    int_val = int(value)
+                    value_type = "int"
+                    formatted = f"{int_val:,}"
+                except ValueError:
+                    try:
+                        float_val = float(value)
+                        value_type = "float"
+                        formatted = f"{float_val:.2f}"
+                    except ValueError:
+                        if value.lower() in ('true', 'false', 'yes', 'no'):
+                            value_type = "bool"
+                        
+                        # If the value is longer than 40 chars, truncate it for display
+                        if len(formatted) > 40:
+                            formatted = formatted[:37] + "..."
+                
+                fields[field_name] = {
+                    "type": value_type,
+                    "example": value,
+                    "formatted": formatted
+                }
+    
+    def _extract_colon_separated(self, log_content, fields):
+        """Extract fields from colon-separated format (key: value).
+        
+        Args:
+            log_content: Log string with colon-separated key-value pairs
+            fields: Fields dictionary to populate
+        """
+        import re
+        
+        # Look for patterns like "key: value" across multiple lines
+        pattern = re.compile(r'([^:]+):\s*(.+?)(?=\n[^:]+:|\n*$)', re.DOTALL)
+        matches = pattern.findall(log_content)
+        
+        for key, value in matches:
+            key = key.strip()
+            value = value.strip()
+            
+            if not key or not value:
+                continue
+            
+            # Try to determine value type
+            value_type = "string"
+            formatted = value
+            
+            try:
+                int_val = int(value)
+                value_type = "int"
+                formatted = f"{int_val:,}"
+            except ValueError:
+                try:
+                    float_val = float(value)
+                    value_type = "float"
+                    formatted = f"{float_val:.2f}"
+                except ValueError:
+                    if value.lower() in ('true', 'false', 'yes', 'no'):
+                        value_type = "bool"
+                    elif key.lower() in ('time', 'timestamp', 'date'):
+                        value_type = "timestamp"
+                    elif key.lower() in ('level', 'severity', 'loglevel'):
+                        value_type = "level"
+                    
+                    # If the value is longer than 40 chars, truncate it for display
+                    if len(formatted) > 40:
+                        formatted = formatted[:37] + "..."
+            
+            fields[key] = {
+                "type": value_type,
+                "example": value,
+                "formatted": formatted
+            }
     
     def _extract_space_separated(self, log_content, fields):
         """Extract fields from space-separated values.
@@ -677,7 +850,7 @@ class AggregationManager:
         """
         return self.policies.get(source_id)
     
-    def get_template(self, source_id):
+	def get_template(self, source_id):
         """Get a log template.
         
         Args:

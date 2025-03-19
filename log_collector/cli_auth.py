@@ -108,6 +108,7 @@ def change_password_screen(auth_manager, username, force_change, cli):
             print("- At least one uppercase letter")
             print("- At least one digit")
             print("- At least one special character (!@#$%^&*()_+{}[]:<>,.?~/\\-)")
+            print("")
         else:
             print(f"{Fore.CYAN}=== Change Password ==={ColorStyle.RESET_ALL}")
             print("\nPassword requirements:")
@@ -115,12 +116,14 @@ def change_password_screen(auth_manager, username, force_change, cli):
             print("- At least one uppercase letter")
             print("- At least one digit")
             print("- At least one special character (!@#$%^&*()_+{}[]:<>,.?~/\\-)")
+            print("")
         
         # Validate current password before proceeding
         attempts = 0
         max_attempts = 3  # Limit retry attempts
         
         while attempts < max_attempts:
+            print(f"{Fore.CYAN}Current password:{ColorStyle.RESET_ALL}")
             try:
                 print(f"{Fore.CYAN}Current password:{ColorStyle.RESET_ALL} ", end="")
                 current_password = getpass.getpass("")

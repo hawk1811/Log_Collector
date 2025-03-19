@@ -116,15 +116,33 @@ def change_password_screen(auth_manager, username, force_change, cli):
             print("- At least one digit")
             print("- At least one special character (!@#$%^&*()_+{}[]:<>,.?~/\\-)")
         
-        # Get current password
-        try:
-            current_password = getpass.getpass("Current password: ")
-        except (getpass.GetPassWarning, Exception):
-            current_password = prompt(
-                HTML("<ansicyan>Current password: </ansicyan>"),
-                style=cli.prompt_style,
-                is_password=True
-            )
+        # Validate current password before proceeding
+        attempts = 0
+        max_attempts = 3  # Limit retry attempts
+        
+        while attempts < max_attempts:
+            try:
+                current_password = getpass.getpass("Current password: ")
+            except (getpass.GetPassWarning, Exception):
+                current_password = prompt(
+                    HTML("<ansicyan>Current password: </ansicyan>"),
+                    style=cli.prompt_style,
+                    is_password=True
+                )
+        
+            # Check if the current password is correct
+            success, message, _ = auth_manager.authenticate(username, current_password)
+            if success:
+                break  # Proceed if the current password is correct
+            else:
+                print(f"{Fore.RED}{message}{ColorStyle.RESET_ALL}")
+                attempts += 1
+        
+        if attempts == max_attempts:
+            print(f"{Fore.RED}Too many failed attempts. Returning to login.{ColorStyle.RESET_ALL}")
+            input("Press Enter to continue...")
+            return False  # Exit if the current password is incorrect too many times
+
         
         # Get new password
         attempts = 0

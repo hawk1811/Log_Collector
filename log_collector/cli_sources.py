@@ -12,6 +12,9 @@ from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import clear
 from prompt_toolkit.formatted_text import HTML
 from colorama import Fore, Style as ColorStyle
+from log_collector.cli_filters import manage_filter_rules
+
+
 
 from log_collector.config import (
     DEFAULT_UDP_PROTOCOL,

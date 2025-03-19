@@ -67,21 +67,28 @@ class AuthManager:
             self._initialize_default_user()
     
     def _save_auth_data(self):
-        """Save authentication data to file."""
+        """Save authentication data to file with debugging."""
         try:
             auth_data = {
                 "users": self.users,
                 "failed_attempts": self.failed_attempts,
                 "lockouts": self.lockouts
             }
-            
+    
+            logger.info(f"Saving auth data: {json.dumps(auth_data, indent=2)}")  # Debugging line
+    
             with open(AUTH_FILE, "w") as f:
                 json.dump(auth_data, f, indent=2)
-            
+    
+            logger.info("Authentication data saved successfully.")  # Confirm successful save
             return True
-        except Exception as e:
-            logger.error(f"Error saving authentication data: {e}")
+        except IOError as e:
+            logger.error(f"IOError saving authentication data: {e}")
             return False
+        except Exception as e:
+            logger.error(f"Unexpected error saving authentication data: {e}")
+            return False
+
     
     def _initialize_default_user(self):
         """Initialize with default admin user."""

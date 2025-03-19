@@ -851,7 +851,8 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
             input("Press Enter to continue...")
 
-def manage_sources(source_manager, processor_manager, listener_manager, cli, aggregation_manager=None):
+def manage_sources(source_manager, processor_manager, listener_manager, cli, 
+                  aggregation_manager=None, filter_manager=None):
     """Manage existing sources.
     
     Args:
@@ -860,6 +861,7 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli, agg
         listener_manager: Listener manager instance
         cli: CLI instance for style and header
         aggregation_manager: Optional aggregation manager instance
+        filter_manager: Optional filter manager instance
     """
     while True:
         clear()
@@ -893,15 +895,33 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli, agg
                 else:
                     template_info = f" {Fore.YELLOW}[Waiting for logs]{ColorStyle.RESET_ALL}"
             
-            print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']}){template_info}")
+            # Show filter info if filter manager is available
+            filter_info = ""
+            if filter_manager:
+                filter_rules = filter_manager.get_source_filters(source_id)
+                if filter_rules:
+                    enabled_count = sum(1 for rule in filter_rules if rule.get("enabled", True))
+                    filter_info = f" {Fore.CYAN}[{enabled_count} active filters]{ColorStyle.RESET_ALL}"
+            
+            print(f"{i}. {source['source_name']} ({source['source_ip']}:{source['listener_port']} {source['protocol']}){template_info}{filter_info}")
         
         print("\nOptions:")
         print("0. Return to Main Menu")
         print("1-N. Select Source to Manage")
         
+        # Additional options based on available managers
+        additional_options = []
+        
         if aggregation_manager:
+            additional_options.append(("A", "Manage Aggregation Rules"))
+        
+        if filter_manager:
+            additional_options.append(("F", "Manage Filter Rules"))
+        
+        if additional_options:
             print("\nOr select:")
-            print("A. Manage Aggregation Rules")
+            for key, desc in additional_options:
+                print(f"{key}. {desc}")
         
         choice = prompt(
             HTML("<ansicyan>Choose an option: </ansicyan>"),
@@ -913,12 +933,16 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli, agg
         elif choice.upper() == "A" and aggregation_manager:
             from log_collector.cli_aggregation import manage_aggregation_rules
             manage_aggregation_rules(source_manager, processor_manager, aggregation_manager, cli)
+        elif choice.upper() == "F" and filter_manager:
+            from log_collector.cli_filters import manage_filter_rules
+            manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli)
         else:
             try:
                 index = int(choice) - 1
                 if 0 <= index < len(sources):
                     source_id = list(sources.keys())[index]
-                    manage_source(source_id, source_manager, processor_manager, listener_manager, cli, aggregation_manager)
+                    manage_source(source_id, source_manager, processor_manager, listener_manager, 
+                                 cli, aggregation_manager, filter_manager)
                 else:
                     print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                     input("Press Enter to continue...")

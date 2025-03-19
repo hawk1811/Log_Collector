@@ -273,27 +273,28 @@ class AuthManager:
         """Change a user's password."""
         logger.info(f"Starting password change for user: {username}")
         
+        # First authenticate with old password (OUTSIDE the lock)
+        logger.info(f"Authenticating user for password change: {username}")
+        auth_result, auth_message, _ = self.authenticate(username, old_password)
+        if not auth_result:
+            logger.warning(f"Password change failed: {auth_message}")
+            return False, auth_message
+        
+        logger.info(f"Initial authentication successful for: {username}")
+        
+        # Validate new password (can be done outside the lock)
+        logger.info(f"Validating new password for: {username}")
+        valid, message = self.validate_password(new_password)
+        if not valid:
+            logger.warning(f"New password validation failed: {message}")
+            return False, message
+        
+        logger.info(f"New password validation successful for: {username}")
+        
+        # Now acquire the lock only for the critical section
         with self.lock:
             logger.info(f"Acquired lock for password change: {username}")
-        
-            # First authenticate with old password
-            logger.info(f"Authenticating user for password change: {username}")
-            auth_result, auth_message, _ = self.authenticate(username, old_password)
-            if not auth_result:
-                logger.warning(f"Password change failed: {auth_message}")
-                return False, auth_message
             
-            logger.info(f"Initial authentication successful for: {username}")
-        
-            # Validate new password
-            logger.info(f"Validating new password for: {username}")
-            valid, message = self.validate_password(new_password)
-            if not valid:
-                logger.warning(f"New password validation failed: {message}")
-                return False, message
-            
-            logger.info(f"New password validation successful for: {username}")
-        
             # Change password
             logger.info(f"Generating new password hash for: {username}")
             salt = self._generate_salt()
@@ -313,11 +314,9 @@ class AuthManager:
             if not save_result:
                 logger.error(f"Failed to save new password to auth.json for: {username}")
                 return False, "Error saving new password"
-            
-            logger.info(f"Password change successful and saved for: {username}")
-            return True, "Password changed successfully"
-
-
+        
+        logger.info(f"Password change successful and saved for: {username}")
+        return True, "Password changed successfully"
     
     def reset_password(self, username, new_password=None):
         """Reset a user's password to a default value or specified password.

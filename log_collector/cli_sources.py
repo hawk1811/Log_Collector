@@ -15,7 +15,6 @@ from colorama import Fore, Style as ColorStyle
 from log_collector.cli_filters import manage_filter_rules
 
 
-
 from log_collector.config import (
     DEFAULT_UDP_PROTOCOL,
     DEFAULT_HEC_BATCH_SIZE,

@@ -122,7 +122,8 @@ def change_password_screen(auth_manager, username, force_change, cli):
         
         while attempts < max_attempts:
             try:
-                current_password = getpass.getpass("Current password: ")
+                print(f"{Fore.CYAN}Current password:{ColorStyle.RESET_ALL} ", end="")
+                current_password = getpass.getpass("")
             except (getpass.GetPassWarning, Exception):
                 current_password = prompt(
                     HTML("<ansicyan>Current password: </ansicyan>"),

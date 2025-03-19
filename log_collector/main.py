@@ -16,6 +16,7 @@ from log_collector.aggregation_manager import AggregationManager
 from log_collector.auth import AuthManager
 from log_collector import CLI
 from log_collector.utils import get_version
+from log_collector.filter_manager import FilterManager
 
 def signal_handler(signum, frame):
     """Handle termination signals."""
@@ -70,15 +71,16 @@ def main():
         auth_manager = AuthManager()
         source_manager = SourceManager()
         aggregation_manager = AggregationManager()
+        filter_manager = FilterManager()  
         
         # Initialize processor manager with the aggregation manager for automatic template creation
-        processor_manager = ProcessorManager(source_manager, aggregation_manager)
+        processor_manager = ProcessorManager(source_manager, aggregation_manager, filter_manager)
         listener_manager = LogListener(source_manager, processor_manager)
         health_check = HealthCheck(source_manager, processor_manager)
         
         # Start CLI in interactive mode
         if not args.no_interactive:
-            cli = CLI(source_manager, processor_manager, listener_manager, health_check, aggregation_manager, auth_manager)
+            cli = CLI(source_manager, processor_manager, listener_manager, health_check, aggregation_manager, auth_manager, filter_manager)
             cli.start()
         else:
             # Non-interactive mode for service deployment

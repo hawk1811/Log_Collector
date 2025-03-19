@@ -26,7 +26,7 @@ from log_collector.cli_auth import login_screen, change_password_screen
 class CLI:
     """Command Line Interface for Log Collector."""
     
-    def __init__(self, source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None, auth_manager=None):
+    def __init__(self, source_manager, processor_manager, listener_manager, health_check, aggregation_manager=None, auth_manager=None, filter_manager=None):
         """Initialize CLI.
         
         Args:
@@ -43,6 +43,7 @@ class CLI:
         self.health_check = health_check
         self.aggregation_manager = aggregation_manager
         self.auth_manager = auth_manager
+        self.filter_manager = filter_manager
         
         # Authentication state
         self.authenticated = False

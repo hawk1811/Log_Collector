@@ -290,16 +290,30 @@ class AuthManager:
             salt = self._generate_salt()
             hashed_password = self._hash_password(new_password, salt)
     
-            self.users[username]["password_hash"] = hashed_password
-            self.users[username]["salt"] = salt
-            self.users[username]["force_change"] = False
-            self.users[username]["last_changed"] = time.time()
-    
-            logger.info("Password successfully changed. Attempting to save to file.")
-    
+            # Verify old password before saving new one
+            auth_result, _, _ = self.authenticate(username, old_password)
+            if not auth_result:
+                logger.warning("Password change aborted: Incorrect old password")
+                return False, "Incorrect current password"
+            
+            # Store new password hash
+            self.users[username] = {
+                "password_hash": hashed_password,
+                "salt": salt,
+                "force_change": False,
+                "last_changed": time.time()
+            }
+            
+            logger.info(f"New password set for user: {username}")
+            
+            # Save changes to auth.json
             if not self._save_auth_data():
                 logger.error("Failed to save new password to auth.json")
                 return False, "Error saving new password"
+            
+            logger.info("Password change successful and saved.")
+            return True, "Password changed successfully"
+
     
             logger.info("Password change successful and saved.")
             return True, "Password changed successfully"

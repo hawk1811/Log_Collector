@@ -75,7 +75,6 @@ class AuthManager:
                 "lockouts": self.lockouts
             }
     
-            logger.info(f"Before saving, auth.json contains: {json.dumps(auth_data, indent=2)}")
     
             with open(AUTH_FILE, "w") as f:
                 json.dump(auth_data, f, indent=2)
@@ -298,12 +297,11 @@ class AuthManager:
                 return False, "Incorrect current password"
             
             # Store new password hash
-            self.users[username] = {
-                "password_hash": hashed_password,
-                "salt": salt,
-                "force_change": False,
-                "last_changed": time.time()
-            }
+            self.users[username]["password_hash"] = hashed_password
+            self.users[username]["salt"] = salt
+            self.users[username]["force_change"] = False
+            self.users[username]["last_changed"] = time.time()
+
             
             logger.info(f"New password set for user: {username}")
             

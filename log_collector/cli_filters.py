@@ -396,7 +396,7 @@ def edit_filter_rule(source_manager, aggregation_manager, filter_manager, cli):
         except ValueError:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
             
-    input("Press Enter to continue...").RESET_ALL}")
+    input("Press Enter to continue...")
     
     print("\n0. Cancel")
     

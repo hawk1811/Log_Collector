@@ -127,7 +127,10 @@ def change_password_screen(auth_manager, username, force_change, cli):
             )
         
         # Get new password
-        while True:
+        attempts = 0
+        max_attempts = 3  # Set a retry limit
+        
+        while attempts < max_attempts:
             try:
                 new_password = getpass.getpass("New password: ")
             except (getpass.GetPassWarning, Exception):
@@ -136,14 +139,14 @@ def change_password_screen(auth_manager, username, force_change, cli):
                     style=cli.prompt_style,
                     is_password=True
                 )
-            
+        
             # Validate password
             valid, message = auth_manager.validate_password(new_password)
             if not valid:
                 print(f"{Fore.RED}{message}{ColorStyle.RESET_ALL}")
+                attempts += 1
                 continue
-            
-            # Confirm new password
+        
             try:
                 confirm_password = getpass.getpass("Confirm new password: ")
             except (getpass.GetPassWarning, Exception):
@@ -152,12 +155,13 @@ def change_password_screen(auth_manager, username, force_change, cli):
                     style=cli.prompt_style,
                     is_password=True
                 )
-            
+        
             if new_password != confirm_password:
                 print(f"{Fore.RED}Passwords do not match. Please try again.{ColorStyle.RESET_ALL}")
+                attempts += 1
                 continue
-            
-            # Change password
+        
+            # Attempt to change password
             success, message = auth_manager.change_password(username, current_password, new_password)
             if success:
                 print(f"{Fore.GREEN}{message}{ColorStyle.RESET_ALL}")
@@ -165,11 +169,11 @@ def change_password_screen(auth_manager, username, force_change, cli):
                 return True
             else:
                 print(f"{Fore.RED}{message}{ColorStyle.RESET_ALL}")
-                
-                # If authentication failed with the current password, start over
-                if "Invalid username or password" in message:
-                    input("Press Enter to try again...")
-                    return False
+                attempts += 1
+        
+        print(f"{Fore.RED}Too many failed attempts. Exiting password change.{ColorStyle.RESET_ALL}")
+        return False
+
         
     finally:
         # Always restore terminal settings before returning

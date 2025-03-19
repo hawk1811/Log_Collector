@@ -17,6 +17,8 @@ from log_collector.auth import AuthManager
 from log_collector import CLI
 from log_collector.utils import get_version
 from log_collector.filter_manager import FilterManager
+from log_collector.updater import restart_application
+
 
 def signal_handler(signum, frame):
     """Handle termination signals."""
@@ -58,6 +60,12 @@ def main():
     if args.version:
         print(f"Log Collector version {get_version()}")
         return 0
+    
+    # Check for restart flag
+    if len(sys.argv) > 1 and sys.argv[1] == "--restart":
+        print(f"Restarting Log Collector after update...")
+        # Remove the restart flag for subsequent execution
+        sys.argv.remove("--restart")
     
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)

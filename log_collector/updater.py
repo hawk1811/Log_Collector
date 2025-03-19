@@ -344,4 +344,9 @@ def restart_application():
     This function does not return as it replaces the current process.
     """
     python = sys.executable
+    
+    # Add restart flag to indicate this is a restart after update
+    if "--restart" not in sys.argv:
+        sys.argv.insert(1, "--restart")
+    
     os.execl(python, python, *sys.argv)

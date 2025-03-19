@@ -201,4 +201,3 @@ def change_password_screen(auth_manager, username, force_change, cli):
         # Always restore terminal settings before returning
         restore_terminal(old_settings)
     
-    return False

@@ -335,69 +335,6 @@ def edit_filter_rule(source_manager, aggregation_manager, filter_manager, cli):
         status_color = Fore.GREEN if rule.get("enabled", True) else Fore.YELLOW
         print(f"{i}. Field: {rule['field']} | Value: \"{rule['value']}\" | Status: {status_color}{status}{ColorStyle.RESET_ALL}")
     
-    print("\nA. Clear all filters")
-    print("0. Cancel")
-    
-    # Select filter rule
-    while True:
-        choice = prompt(
-            HTML("<ansicyan>Select a filter rule or action: </ansicyan>"),
-            style=cli.prompt_style
-        )
-        
-        if choice == "0":
-            return
-        elif choice.upper() == "A":
-            # Clear all filters
-            confirm = prompt(
-                HTML("<ansicyan>Are you sure you want to clear all filters? (y/n): </ansicyan>"),
-                style=cli.prompt_style
-            )
-            
-            if confirm.lower() == 'y':
-                result = filter_manager.clear_filters(source_id)
-                
-                if result:
-                    print(f"{Fore.GREEN}All filters cleared successfully.{ColorStyle.RESET_ALL}")
-                else:
-                    print(f"{Fore.RED}Failed to clear filters.{ColorStyle.RESET_ALL}")
-                
-                input("Press Enter to continue...")
-                return
-            else:
-                continue
-        
-        try:
-            index = int(choice) - 1
-            if 0 <= index < len(filter_rules):
-                selected_rule = filter_rules[index]
-                field_name = selected_rule["field"]
-                
-                # Confirm removal
-                confirm = prompt(
-                    HTML(f"<ansicyan>Are you sure you want to remove the filter for field \"{field_name}\"? (y/n): </ansicyan>"),
-                    style=cli.prompt_style
-                )
-                
-                if confirm.lower() == 'y':
-                    result = filter_manager.remove_filter(source_id, field_name)
-                    
-                    if result:
-                        print(f"{Fore.GREEN}Filter removed successfully.{ColorStyle.RESET_ALL}")
-                    else:
-                        print(f"{Fore.RED}Failed to remove filter.{ColorStyle.RESET_ALL}")
-                else:
-                    print(f"{Fore.YELLOW}Removal cancelled.{ColorStyle.RESET_ALL}")
-                
-                input("Press Enter to continue...")
-                return
-            else:
-                print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
-        except ValueError:
-            print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
-            
-    input("Press Enter to continue...")
-    
     print("\n0. Cancel")
     
     # Select filter rule
@@ -611,8 +548,3 @@ def remove_filter_rule(source_manager, aggregation_manager, filter_manager, cli)
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
     
     input("Press Enter to continue...")
-    
-    for i, rule in enumerate(filter_rules, 1):
-        status = "Enabled" if rule.get("enabled", True) else "Disabled"
-        status_color = Fore.GREEN if rule.get("enabled", True) else Fore.YELLOW
-        print(f"{i}. Field: {rule['field']} | Value: \"{rule['value']}\" | Status: {status_color}{status}{ColorStyle

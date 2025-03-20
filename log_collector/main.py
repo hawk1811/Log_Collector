@@ -1,5 +1,5 @@
 """
-Main entry point for Log Collector application2.
+Main entry point for Log Collector application.
 """
 import sys
 import signal
@@ -121,59 +121,80 @@ def daemonize(pid_file=None):
             
     elif os.name == 'nt':  # Windows
         try:
-            # On Windows, we use a different approach
-            # We'll use the pythonw.exe interpreter if available 
-            # or create a detached process
-            
+            # On Windows, we use the subprocess module to create a detached process
             # Check if we're already detached
             if not os.environ.get('LOG_COLLECTOR_DETACHED'):
-                # First, find pythonw.exe (windowless Python)
-                python_path = sys.executable
-                pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
+                import subprocess
                 
-                if not os.path.exists(pythonw_path):
-                    # Fall back to regular python with CREATE_NO_WINDOW
-                    pythonw_path = python_path
+                # Get the current executable path
+                python_exe = sys.executable
                 
-                # Build the command line, adding a flag to prevent infinite recursion
-                script_path = os.path.abspath(sys.argv[0])
-                args = sys.argv[1:]  # Original args
+                # Get the main script path
+                if getattr(sys, 'frozen', False):
+                    # Running as compiled executable
+                    script_path = sys.executable
+                    args = sys.argv[1:]
+                else:
+                    # Running as script
+                    script_path = sys.argv[0]
+                    args = sys.argv[1:]
                 
                 # Remove --daemon from args to prevent infinite loop
                 if '--daemon' in args:
                     args.remove('--daemon')
                 
-                # Add flag to indicate we're already detached
-                os.environ['LOG_COLLECTOR_DETACHED'] = '1'
+                # Add the --no-interactive flag if not already present
+                if '--no-interactive' not in args:
+                    args.append('--no-interactive')
                 
-                # Create temporary batch file to run the command
-                # This approach helps with detaching completely from command prompt
-                with tempfile.NamedTemporaryFile(suffix='.bat', delete=False) as batch_file:
-                    batch_path = batch_file.name
-                    
-                    # Write batch commands
-                    batch_commands = [
-                        '@echo off\n',
-                        'setlocal\n',
-                        f'set LOG_COLLECTOR_DETACHED=1\n',
-                        f'start "" /B "{pythonw_path}" "{script_path}" {" ".join(args)}\n'
-                    ]
-                    batch_file.write(''.join(batch_commands).encode('utf-8'))
+                # Create a complete command list
+                if script_path.endswith('.py'):
+                    # If it's a Python script, use the Python executable
+                    cmd = [python_exe, script_path] + args
+                else:
+                    # If it's an executable, call it directly
+                    cmd = [script_path] + args
                 
-                # Execute the batch file and exit
-                os.system(f'start "" /B "{batch_path}" && ping -n 2 127.0.0.1 > nul && del "{batch_path}"')
+                # Set environment variables for the child process
+                env = os.environ.copy()
+                env['LOG_COLLECTOR_DETACHED'] = '1'
+                
+                # Create a detached process with no window
+                DETACHED_PROCESS = 0x00000008
+                CREATE_NO_WINDOW = 0x08000000
+                
+                logger.info(f"Launching detached process with command: {' '.join(cmd)}")
+                
+                # Start the detached process
+                process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+                    close_fds=True,
+                    shell=False
+                )
+                
+                # Log the PID for reference
+                logger.info(f"Detached process started with PID: {process.pid}")
+                
+                # Write PID file if specified
+                if pid_file:
+                    with open(pid_file, 'w') as f:
+                        f.write(str(process.pid))
+                
+                # Exit the parent
                 sys.exit(0)
             
-            # We're already in the detached process, continue with execution
-            # Write PID file if specified
-            if pid_file:
+            # If we're here, we're the child process
+            logger.info(f"Running as detached process. PID: {os.getpid()}")
+            
+            # Write PID file if specified and not already written by the parent
+            if pid_file and not os.path.exists(pid_file):
                 with open(pid_file, 'w') as f:
                     f.write(str(os.getpid()))
                 
                 # Remove PID file on exit
                 atexit.register(lambda: os.remove(pid_file) if os.path.exists(pid_file) else None)
-                
-            logger.info(f"Successfully detached process. PID: {os.getpid()}")
             
         except Exception as e:
             logger.error(f"Failed to daemonize on Windows: {e}")

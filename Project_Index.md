@@ -9,6 +9,7 @@ Application entry point for the Log Collector application.
 
 - `signal_handler(signum, frame)`: Handles termination signals for clean shutdowns
 - `parse_args()`: Parses command line arguments for the application
+- `daemonize()`: Detaches the process from the terminal and runs in background mode 
 - `main()`: Main entry point that initializes all components and starts the application
 
 ### log_collector/__init__.py

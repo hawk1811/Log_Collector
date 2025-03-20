@@ -15,3 +15,6 @@ wheel>=0.37.0
 
 # Compression
 gzip-reader>=0.1.0
+
+# Service support
+pywin32>=303;platform_system=="Windows"

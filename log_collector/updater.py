@@ -118,7 +118,8 @@ def check_for_updates(cli):
     time.sleep(2)  # Short pause to let the user read the message
 
     # Restart the application using subprocess
-    subprocess.run([sys.executable, 'log_collector', 'Log_Collector'])
+    # subprocess.run([sys.executable, 'log_collector', 'Log_Collector'])
+    subprocess.run(["Log_Collector"])
 
     sys.exit(0)  # Exit the current script to allow the restarted app to run
     return True  # Signal that the app should restart

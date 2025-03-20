@@ -1,5 +1,5 @@
 """
-Main entry point for Log Collector application.
+Main entry point for Log Collector application2.
 """
 import sys
 import signal

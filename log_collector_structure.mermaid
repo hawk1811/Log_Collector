@@ -9,12 +9,29 @@ flowchart TD
             cli_sources["cli_sources.py\n(Source management)"]
             cli_health["cli_health.py\n(Health check config)"]
             cli_status["cli_status.py\n(Status dashboard)"]
+            cli_auth["cli_auth.py\n(Authentication)"]
+            cli_aggregation["cli_aggregation.py\n(Aggregation rules)"]
+            cli_filters["cli_filters.py\n(Filter rules)"]
         end
         
-        processor["processor.py\n(Log processing)"]
-        source_manager["source_manager.py\n(Source configuration)"]
-        listener["listener.py\n(Network listeners)"]
-        health_check["health_check.py\n(System monitoring)"]
+        subgraph core_services["Core Services"]
+            processor["processor.py\n(Log processing)"]
+            source_manager["source_manager.py\n(Source configuration)"]
+            listener["listener.py\n(Network listeners)"]
+            health_check["health_check.py\n(System monitoring)"]
+            aggregation_manager["aggregation_manager.py\n(Log aggregation)"]
+            filter_manager["filter_manager.py\n(Log filtering)"]
+        end
+        
+        subgraph authentication["Authentication"]
+            auth["auth.py\n(User management)"]
+        end
+        
+        subgraph utility["Utility Modules"]
+            utils["utils.py\n(Helper functions)"]
+            config["config.py\n(Global settings)"]
+            updater["updater.py\n(Updates management)"]
+        end
     end
     
     main --> cli_init
@@ -23,18 +40,51 @@ flowchart TD
     cli_main --> cli_sources
     cli_main --> cli_health
     cli_main --> cli_status
+    cli_main --> cli_auth
+    cli_main --> cli_aggregation
+    cli_main --> cli_filters
     
     cli_sources --> cli_utils
     cli_health --> cli_utils
     cli_status --> cli_utils
+    cli_auth --> cli_utils
+    cli_aggregation --> cli_utils
+    cli_filters --> cli_utils
     
     cli_main --> processor
     cli_main --> listener
     cli_main --> source_manager
     cli_main --> health_check
+    cli_main --> aggregation_manager
+    cli_main --> filter_manager
+    cli_main --> auth
+    cli_main --> updater
+    
+    processor --> source_manager
+    processor --> aggregation_manager
+    processor --> filter_manager
+    processor --> config
+    
+    listener --> source_manager
+    listener --> processor
+    
+    health_check --> source_manager
+    health_check --> processor
+    
+    auth --> config
+    
+    aggregation_manager --> config
+    filter_manager --> config
+    source_manager --> config
     
     classDef module fill:#f9f,stroke:#333,stroke-width:2px,color:black;
     classDef cliModule fill:#bbf,stroke:#333,stroke-width:2px,color:black;
+    classDef coreModule fill:#afa,stroke:#333,stroke-width:2px,color:black; 
+    classDef authModule fill:#fdb,stroke:#333,stroke-width:2px,color:black;
+    classDef utilModule fill:#ddd,stroke:#333,stroke-width:2px,color:black;
     
-    class main,processor,source_manager,listener,health_check module;
-    class cli_init,cli_main,cli_utils,cli_sources,cli_health,cli_status cliModule;
+    class main module;
+    class cli_init,cli_main,cli_utils,cli_sources,cli_health,cli_status,cli_auth,cli_aggregation,cli_filters cliModule;
+    class processor,source_manager,listener,health_check,aggregation_manager,filter_manager coreModule;
+    class auth authModule;
+    class utils,config,updater utilModule;

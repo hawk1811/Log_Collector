@@ -1,0 +1,17 @@
+# Core dependencies
+requests>=2.25.0
+psutil>=5.8.0
+prompt_toolkit>=3.0.20
+colorama>=0.4.4
+
+# Security
+bcrypt>=3.2.0
+cryptography>=35.0.0
+
+# System utilities
+pathlib>=1.0.1
+setuptools>=42.0.0
+wheel>=0.37.0
+
+# Compression
+gzip-reader>=0.1.0

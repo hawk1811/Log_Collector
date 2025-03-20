@@ -62,21 +62,6 @@ def check_for_updates(cli):
 
     print(f"\nCurrent Git branch: {current_branch}")
 
-    # Check for uncommitted changes
-    if _has_local_changes():
-        print(f"\n{Fore.YELLOW}Warning: You have uncommitted local changes.{ColorStyle.RESET_ALL}")
-        print("Updating may overwrite your changes.")
-        
-        confirm = prompt(
-            HTML("<ansicyan>Continue anyway? (y/n): </ansicyan>"),
-            style=cli.prompt_style
-        )
-        
-        if confirm.lower() != 'y':
-            print(f"{Fore.YELLOW}Update canceled.{ColorStyle.RESET_ALL}")
-            input("Press Enter to continue...")
-            return False
-
     # Fetch updates
     print(f"\n{Fore.CYAN}Checking for updates...{ColorStyle.RESET_ALL}")
     fetch_result = _git_fetch()

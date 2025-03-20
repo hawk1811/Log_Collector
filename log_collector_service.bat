@@ -1,0 +1,1 @@
+log_collector_service.bat

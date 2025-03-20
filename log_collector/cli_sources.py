@@ -1022,7 +1022,7 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli,
                     source_id = list(available_sources.keys())[index]
                     # Now call filter management with the selected source
                     from log_collector.cli_filters import manage_filter_rules
-                    manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli, source_id)
+                    manage_filter_rules(source_manager, aggregation_manager, filter_manager, cli)
                 else:
                     print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                     input("Press Enter to continue...")

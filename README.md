@@ -3,7 +3,6 @@
 A high-performance log collection and processing system capable of handling up to 20,000 events per second (EPS) with efficient in-memory processing. Log Collector can receive logs via TCP or UDP, process them using customizable rules, and forward them to either a file system folder or a HTTP Event Collector (HEC) endpoint.
 
 ![Log Collector Dashboard Screenshot](screenshots/dashboard.png)
-<!-- You'll need to add this screenshot file later -->
 
 ## Features
 
@@ -45,7 +44,6 @@ A high-performance log collection and processing system capable of handling up t
 ## Dashboard View
 
 ![Status Dashboard Screenshot](screenshots/status_dash.png)
-<!-- You'll need to add this screenshot file later -->
 
 ## Installation
 
@@ -78,10 +76,22 @@ Start the application with the CLI interface:
 log_collector
 ```
 
-Or run without the interactive interface (for service mode):
+Run without the interactive interface (for service mode):
 
 ```bash
 log_collector --no-interactive
+```
+
+Run as a background daemon (detached from terminal):
+
+```bash
+log_collector --no-interactive --daemon
+```
+
+You can also specify a PID file location:
+
+```bash
+log_collector --no-interactive --daemon --pid-file=/var/run/log_collector.pid
 ```
 
 ## Configuration
@@ -101,7 +111,6 @@ log_collector --no-interactive
      - For HEC: HEC URL, token, and batch size
 
 ![Add Source Screenshot](screenshots/add_source.png)
-<!-- You'll need to add this screenshot file later -->
 
 ### Managing Sources
 
@@ -121,7 +130,6 @@ Aggregation rules allow you to reduce log volume by combining similar log events
 3. The system will automatically combine logs that match on these fields
 
 ![Aggregation Rules Screenshot](screenshots/aggregation.png)
-<!-- You'll need to add this screenshot file later -->
 
 ### Filter Rules
 
@@ -132,7 +140,6 @@ Filter rules let you exclude unwanted logs from processing:
 3. Logs matching these filters will be excluded from processing
 
 ![Filter Rules Screenshot](screenshots/filters.png)
-<!-- You'll need to add this screenshot file later -->
 
 ## Architecture
 

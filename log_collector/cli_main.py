@@ -148,6 +148,7 @@ class CLI:
         """Print application header."""
         print(f"{Fore.CYAN}======================================")
         print("         LOG COLLECTOR")
+        print("          2025 @ K.G.")
         print("======================================")
         print(f"Version: 1.0.0{ColorStyle.RESET_ALL}")
         print()
@@ -186,7 +187,7 @@ class CLI:
         if choice == "1":
             add_source(self.source_manager, self.processor_manager, self.listener_manager, self)
         elif choice == "2":
-            manage_sources(self.source_manager, self.processor_manager, self.listener_manager, self, self.aggregation_manager)
+            manage_sources(self.source_manager, self.processor_manager, self.listener_manager, self, self.aggregation_manager, self.filter_manager)
         elif choice == "3":
             configure_health_check(self.health_check, self)
         elif choice == "4":

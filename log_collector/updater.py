@@ -1,6 +1,6 @@
 """
 Update module for Log Collector.
-Handles checking for updates, pulling from git, and upgrading the package test.
+Handles checking for updates, pulling from git, and upgrading the package.
 """
 import os
 import sys

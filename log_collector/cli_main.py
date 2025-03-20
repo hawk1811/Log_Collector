@@ -148,7 +148,7 @@ class CLI:
         """Print application header."""
         print(f"{Fore.CYAN}======================================")
         print("         LOG COLLECTOR")
-        print("          2025 @ K.G.")
+        print(f"{Fore.GRAY}          2025 @ K.G.")
         print("======================================")
         print(f"Version: 1.0.0{ColorStyle.RESET_ALL}")
         print()

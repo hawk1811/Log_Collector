@@ -144,7 +144,7 @@ class CLI:
                 print(f"{Fore.RED}Error: {e}{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
     
-    def print_header(self):
+    def _print_header(self):
         """Print application header."""
         print(f"{Fore.CYAN}======================================")
         print("         LOG COLLECTOR")

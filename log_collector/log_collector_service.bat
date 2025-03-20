@@ -30,7 +30,8 @@ if exist "log_collector.exe" (
         exit /b 1
     )
     
-    set "EXECUTABLE=python log_collector"
+    set "EXECUTABLE=python"
+    set "SCRIPT=log_collector"
 )
 
 REM Command line arguments
@@ -68,29 +69,35 @@ if exist "%PID_FILE%" (
     set /p PID=<"%PID_FILE%"
     
     REM Check if process is still running
-    tasklist /fi "PID eq !PID!" | find "!PID!" >nul
+    tasklist /fi "PID eq %PID%" | find "%PID%" >nul
     if !errorlevel! equ 0 (
-        echo Service is already running with PID !PID!
+        echo Service is already running with PID %PID%
         goto :end
     ) else (
-        echo Previous instance (PID !PID!) is no longer running.
+        echo Previous instance (PID %PID%) is no longer running.
         del "%PID_FILE%" 2>nul
     )
 )
 
 REM Start the service with output redirected to log file
-start /B "" cmd /c %EXECUTABLE% %ARGS% ^> "%LOG_FILE%" 2^>^&1
-
-REM Get PID of the started process
-for /f "tokens=2" %%a in ('tasklist /fi "IMAGENAME eq %EXECUTABLE:.* =%"^|find "%EXECUTABLE:.* =%"') do (
-    set PID=%%a
-    goto :gotpid
+if "%EXECUTABLE%"=="log_collector.exe" (
+    start /B "" %EXECUTABLE% %ARGS% > "%LOG_FILE%" 2>&1
+    for /f "tokens=2" %%a in ('tasklist /fi "IMAGENAME eq log_collector.exe" ^| find "log_collector.exe"') do (
+        set "PID=%%a"
+        goto :writelogs
+    )
+) else (
+    start /B "" %EXECUTABLE% %SCRIPT% %ARGS% > "%LOG_FILE%" 2>&1
+    for /f "tokens=2" %%a in ('tasklist /fi "IMAGENAME eq python.exe" ^| find "python.exe"') do (
+        set "PID=%%a"
+        goto :writelogs
+    )
 )
 
-:gotpid
+:writelogs
 if defined PID (
-    echo !PID! > "%PID_FILE%"
-    echo Service started with PID !PID!
+    echo %PID% > "%PID_FILE%"
+    echo Service started with PID %PID%
 ) else (
     echo Failed to get PID of started service.
 )
@@ -106,10 +113,10 @@ if not exist "%PID_FILE%" (
 )
 
 set /p PID=<"%PID_FILE%"
-echo Stopping process with PID !PID!...
+echo Stopping process with PID %PID%...
 
-taskkill /F /PID !PID! >nul 2>&1
-if !errorlevel! equ 0 (
+taskkill /F /PID %PID% >nul 2>&1
+if errorlevel 0 (
     echo Service stopped successfully.
     del "%PID_FILE%" 2>nul
 ) else (
@@ -128,11 +135,11 @@ if not exist "%PID_FILE%" (
 )
 
 set /p PID=<"%PID_FILE%"
-tasklist /fi "PID eq !PID!" | find "!PID!" >nul
-if !errorlevel! equ 0 (
-    echo Service is running with PID !PID!
+tasklist /fi "PID eq %PID%" | find "%PID%" >nul
+if errorlevel 0 (
+    echo Service is running with PID %PID%
 ) else (
-    echo Service is not running (PID !PID! not found).
+    echo Service is not running (PID %PID% not found).
     del "%PID_FILE%" 2>nul
 )
 goto :end
@@ -157,5 +164,4 @@ exit /b 0
 :end
 echo.
 pause
-cls
-goto :eof
+exit /b 0

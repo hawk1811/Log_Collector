@@ -34,41 +34,34 @@ from log_collector.config import (
 )
 
 def check_for_updates(cli):
-    """Check for updates and perform upgrade if available.
-    
-    Args:
-        cli: CLI instance for header and prompt style
-    
-    Returns:
-        bool: True if system should restart, False otherwise
-    """
+    """Check for updates and perform upgrade if available."""
     clear()
     cli._print_header()
     print(f"{Fore.CYAN}=== Check for Updates ==={ColorStyle.RESET_ALL}")
-    
+
     # Verify git is installed
     if not _is_git_installed():
         print(f"{Fore.RED}Git is not installed or not available in PATH.{ColorStyle.RESET_ALL}")
         print("Please install Git to use this feature.")
         input("Press Enter to continue...")
         return False
-    
+
     # Check if we're in a git repository
     if not _is_git_repo():
         print(f"{Fore.RED}Current installation is not a Git repository.{ColorStyle.RESET_ALL}")
         print("This feature only works when Log Collector is installed from Git.")
         input("Press Enter to continue...")
         return False
-    
+
     # Check current branch
     current_branch = _get_current_branch()
     if not current_branch:
         print(f"{Fore.RED}Could not determine current Git branch.{ColorStyle.RESET_ALL}")
         input("Press Enter to continue...")
         return False
-    
+
     print(f"\nCurrent Git branch: {current_branch}")
-    
+
     # Check for uncommitted changes
     if _has_local_changes():
         print(f"\n{Fore.YELLOW}Warning: You have uncommitted local changes.{ColorStyle.RESET_ALL}")
@@ -83,64 +76,66 @@ def check_for_updates(cli):
             print(f"{Fore.YELLOW}Update canceled.{ColorStyle.RESET_ALL}")
             input("Press Enter to continue...")
             return False
-    
+
     # Fetch updates
     print(f"\n{Fore.CYAN}Checking for updates...{ColorStyle.RESET_ALL}")
     fetch_result = _git_fetch()
-    
+
     if not fetch_result:
         print(f"{Fore.RED}Failed to fetch updates from remote repository.{ColorStyle.RESET_ALL}")
         input("Press Enter to continue...")
         return False
-    
+
     # Check if updates are available
     updates_available = _updates_available(current_branch)
-    
+
     if not updates_available:
         print(f"\n{Fore.GREEN}Your installation is up to date!{ColorStyle.RESET_ALL}")
         input("Press Enter to continue...")
         return False
-    
+
     # Show available updates
     print(f"\n{Fore.GREEN}Updates available!{ColorStyle.RESET_ALL}")
-    
-    # Show commit log
     print(f"\n{Fore.CYAN}Latest changes:{ColorStyle.RESET_ALL}")
     _show_commit_log(current_branch)
-    
+
     # Prompt for update
     confirm = prompt(
         HTML("<ansicyan>Do you want to update now? (y/n): </ansicyan>"),
         style=cli.prompt_style
     )
-    
+
     if confirm.lower() != 'y':
         print(f"{Fore.YELLOW}Update canceled.{ColorStyle.RESET_ALL}")
         input("Press Enter to continue...")
         return False
-    
+
     # Perform update
     print(f"\n{Fore.CYAN}Updating...{ColorStyle.RESET_ALL}")
     update_success = _git_pull(current_branch)
-    
+
     if not update_success:
         print(f"{Fore.RED}Update failed. You may need to resolve conflicts manually.{ColorStyle.RESET_ALL}")
         input("Press Enter to continue...")
         return False
-    
+
     # Install updated package
     print(f"\n{Fore.CYAN}Installing updated package...{ColorStyle.RESET_ALL}")
     install_success = _pip_install_upgrade()
-    
+
     if not install_success:
         print(f"{Fore.RED}Package upgrade failed.{ColorStyle.RESET_ALL}")
         input("Press Enter to continue...")
         return False
-    
+
     print(f"\n{Fore.GREEN}Update successful!{ColorStyle.RESET_ALL}")
     print("The application will restart to apply changes.")
     time.sleep(2)  # Short pause to let the user read the message
-    
+
+    # Restart the application using subprocess
+    subprocess.run([sys.executable, 'log_collector', 'Log_Collector'])
+
+    sys.exit(0)  # Exit the current script to allow the restarted app to run
     return True  # Signal that the app should restart
 
 def _is_git_installed():

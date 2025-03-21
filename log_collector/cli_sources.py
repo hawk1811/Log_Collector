@@ -32,6 +32,9 @@ def add_source(source_manager, processor_manager, listener_manager, cli):
         listener_manager: Listener manager instance
         cli: CLI instance for printing header
     """
+    # Get access to the service manager from CLI instance
+    service_manager = cli.service_manager
+    
     clear()
     cli._print_header()
     print(f"{Fore.CYAN}=== Add New Source ==={ColorStyle.RESET_ALL}")
@@ -192,21 +195,24 @@ def add_source(source_manager, processor_manager, listener_manager, cli):
         source_id = result["source_id"]
         print(f"{Fore.GREEN}Source added successfully with ID: {source_id}{ColorStyle.RESET_ALL}")
         
-        # Start newly added source by completely restarting the services
-        print(f"\n{Fore.CYAN}Starting newly added source...{ColorStyle.RESET_ALL}")
+        # Apply new source configuration
+        print(f"\n{Fore.CYAN}Applying new source configuration...{ColorStyle.RESET_ALL}")
         
         try:
-            # Stop all services
-            print(f"- Stopping all services...")
-            processor_manager.stop()
-            listener_manager.stop()
+            # Check if service is running
+            service_was_running = service_manager.is_running()
             
-            # Start all services with new configuration
-            print(f"- Starting all services with new configuration...")
-            processor_manager.start()
-            listener_manager.start()
-            
-            print(f"{Fore.GREEN}Source started successfully.{ColorStyle.RESET_ALL}")
+            if service_was_running:
+                print(f"- Restarting service to apply changes...")
+                success, message = service_manager.restart_service()
+                
+                if success:
+                    print(f"{Fore.GREEN}Service restarted successfully with new configuration.{ColorStyle.RESET_ALL}")
+                else:
+                    print(f"{Fore.RED}Failed to restart service: {message}{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}You may need to restart the service manually to apply changes.{ColorStyle.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}Service is not running. Start it from the Service Management menu to apply changes.{ColorStyle.RESET_ALL}")
             
             # Check if we have access to the aggregation manager
             if cli and hasattr(cli, 'aggregation_manager') and cli.aggregation_manager:
@@ -216,9 +222,9 @@ def add_source(source_manager, processor_manager, listener_manager, cli):
                 print(f"- This log will be used to identify fields for aggregation rules")
                 print(f"- You can view and manage fields by selecting 'Manage Sources' -> select this source -> 'Manage Aggregation Rules'")
         except Exception as e:
-            print(f"{Fore.RED}Error starting services: {e}{ColorStyle.RESET_ALL}")
-            print(f"{Fore.YELLOW}Source configuration saved, but service could not be started.{ColorStyle.RESET_ALL}")
-            print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.RED}Error applying changes: {e}{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}Source configuration saved, but changes could not be applied.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}You may need to restart the service manually to apply changes.{ColorStyle.RESET_ALL}")
     else:
         print(f"{Fore.RED}Failed to add source: {result['error']}{ColorStyle.RESET_ALL}")
     
@@ -237,6 +243,9 @@ def edit_source(source_id, source_manager, processor_manager, listener_manager, 
         listener_manager: Listener manager instance
         cli: CLI instance for header
     """
+    # Get access to the service manager from CLI instance
+    service_manager = cli.service_manager
+    
     clear()
     cli._print_header()
     source = source_manager.get_source(source_id)
@@ -402,25 +411,28 @@ def edit_source(source_id, source_manager, processor_manager, listener_manager, 
         if result["success"]:
             print(f"{Fore.GREEN}Source updated successfully.{ColorStyle.RESET_ALL}")
             
-            # Restart services using the same approach as in _add_source
+            # Restart service to apply changes
             print(f"\n{Fore.CYAN}Applying changes...{ColorStyle.RESET_ALL}")
             
             try:
-                # Stop all services
-                print(f"- Stopping all services...")
-                processor_manager.stop()
-                listener_manager.stop()
+                # Check if service is running
+                service_was_running = service_manager.is_running()
                 
-                # Start all services with new configuration
-                print(f"- Starting all services with new configuration...")
-                processor_manager.start()
-                listener_manager.start()
-                
-                print(f"{Fore.GREEN}Changes applied successfully.{ColorStyle.RESET_ALL}")
+                if service_was_running:
+                    print(f"- Restarting service to apply changes...")
+                    success, message = service_manager.restart_service()
+                    
+                    if success:
+                        print(f"{Fore.GREEN}Service restarted successfully with new configuration.{ColorStyle.RESET_ALL}")
+                    else:
+                        print(f"{Fore.RED}Failed to restart service: {message}{ColorStyle.RESET_ALL}")
+                        print(f"{Fore.YELLOW}You may need to restart the service manually to apply changes.{ColorStyle.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}Service is not running. Start it from the Service Management menu to apply changes.{ColorStyle.RESET_ALL}")
             except Exception as e:
                 print(f"{Fore.RED}Error applying changes: {e}{ColorStyle.RESET_ALL}")
-                print(f"{Fore.YELLOW}Source configuration saved, but service update may be incomplete.{ColorStyle.RESET_ALL}")
-                print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}Source configuration saved, but changes could not be applied.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}You may need to restart the service manually to apply changes.{ColorStyle.RESET_ALL}")
         else:
             print(f"{Fore.RED}Failed to update source: {result['error']}{ColorStyle.RESET_ALL}")
     else:
@@ -428,7 +440,7 @@ def edit_source(source_id, source_manager, processor_manager, listener_manager, 
     
     input("Press Enter to continue...")
 
-def delete_source(source_id, source_manager, processor_manager, listener_manager):
+def delete_source(source_id, source_manager, processor_manager, listener_manager, cli):
     """Delete a source.
     
     Args:
@@ -436,7 +448,11 @@ def delete_source(source_id, source_manager, processor_manager, listener_manager
         source_manager: Source manager instance
         processor_manager: Processor manager instance
         listener_manager: Listener manager instance
+        cli: CLI instance for accessing the service manager
     """
+    # Get access to the service manager from CLI instance
+    service_manager = cli.service_manager
+    
     source = source_manager.get_source(source_id)
     if not source:
         print(f"{Fore.RED}Source not found.{ColorStyle.RESET_ALL}")
@@ -453,25 +469,28 @@ def delete_source(source_id, source_manager, processor_manager, listener_manager
     if result["success"]:
         print(f"{Fore.GREEN}Source deleted successfully.{ColorStyle.RESET_ALL}")
         
-        # Restart services using the same approach as in _add_source
+        # Restart service to apply changes
         print(f"\n{Fore.CYAN}Applying changes...{ColorStyle.RESET_ALL}")
         
         try:
-            # Stop all services
-            print(f"- Stopping all services...")
-            processor_manager.stop()
-            listener_manager.stop()
+            # Check if service is running
+            service_was_running = service_manager.is_running()
             
-            # Start all services with new configuration
-            print(f"- Starting all services with new configuration...")
-            processor_manager.start()
-            listener_manager.start()
-            
-            print(f"{Fore.GREEN}Changes applied successfully.{ColorStyle.RESET_ALL}")
+            if service_was_running:
+                print(f"- Restarting service to apply changes...")
+                success, message = service_manager.restart_service()
+                
+                if success:
+                    print(f"{Fore.GREEN}Service restarted successfully with new configuration.{ColorStyle.RESET_ALL}")
+                else:
+                    print(f"{Fore.RED}Failed to restart service: {message}{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.YELLOW}You may need to restart the service manually to apply changes.{ColorStyle.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}Service is not running. No restart necessary.{ColorStyle.RESET_ALL}")
         except Exception as e:
             print(f"{Fore.RED}Error applying changes: {e}{ColorStyle.RESET_ALL}")
             print(f"{Fore.YELLOW}Source deleted, but service update may be incomplete.{ColorStyle.RESET_ALL}")
-            print(f"{Fore.YELLOW}You may need to restart the application to fully apply changes.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}You may need to restart the service manually to apply changes.{ColorStyle.RESET_ALL}")
     else:
         print(f"{Fore.RED}Failed to delete source: {result['error']}{ColorStyle.RESET_ALL}")
     
@@ -865,7 +884,7 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
         if choice == "1":
             edit_source(source_id, source_manager, processor_manager, listener_manager, cli)
         elif choice == "2":
-            delete_source(source_id, source_manager, processor_manager, listener_manager)
+            delete_source(source_id, source_manager, processor_manager, listener_manager, cli)
             return
         elif choice == "3" and has_aggregation:
             from log_collector.cli_aggregation import create_aggregation_rule, edit_aggregation_rule
@@ -1042,3 +1061,4 @@ def manage_sources(source_manager, processor_manager, listener_manager, cli,
             except ValueError:
                 print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
                 input("Press Enter to continue...")
+

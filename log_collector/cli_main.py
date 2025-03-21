@@ -25,6 +25,8 @@ from log_collector.cli_sources import add_source, manage_sources
 from log_collector.cli_health import configure_health_check
 from log_collector.cli_status import view_status
 from log_collector.cli_auth import login_screen, change_password_screen
+from log_collector.cli_service import manage_service, get_service_status_summary
+from log_collector.service_manager import ServiceManager
 
 class CLI:
     """Command Line Interface for Log Collector."""
@@ -47,6 +49,9 @@ class CLI:
         self.aggregation_manager = aggregation_manager
         self.auth_manager = auth_manager
         self.filter_manager = filter_manager
+        
+        # Service manager for independent service control
+        self.service_manager = ServiceManager()
         
         # Authentication state
         self.authenticated = False
@@ -80,7 +85,6 @@ class CLI:
                     print(f"{Fore.CYAN}Cleaning up resources...{ColorStyle.RESET_ALL}")
                     self._clean_exit()
                     print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
-                    print(f"{Fore.RED}(run 'python log_collector_service.py start' to start Log-Collector service){ColorStyle.RESET_ALL}")
                     sys.exit(0)
                 else:
                     print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
@@ -92,7 +96,6 @@ class CLI:
                 print(f"\n{Fore.CYAN}Forced exit. Cleaning up resources...{ColorStyle.RESET_ALL}")
                 self._clean_exit()
                 print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
-                print(f"{Fore.RED}(run 'python log_collector_service.py start' to start Log-Collector service){ColorStyle.RESET_ALL}")
                 sys.exit(0)
         
         # Register the signal handler for SIGINT (Ctrl+C)
@@ -119,19 +122,18 @@ class CLI:
         # Initialize terminal settings for the main application after authentication
         self.old_terminal_settings = setup_terminal()
         
-        # Start component threads if there are already sources configured
-        sources = self.source_manager.get_sources()
-        if sources:
-            self.processor_manager.start()
-            self.listener_manager.start()
-            print(f"{Fore.GREEN}Started with {len(sources)} configured sources.{ColorStyle.RESET_ALL}")
+        # Check if the service is running
+        service_running = self.service_manager.is_running()
         
-        # Automatically start health check if configured
-        if hasattr(self.health_check, 'config') and self.health_check.config is not None:
-            if self.health_check.start():
-                print(f"{Fore.GREEN}Health check monitoring started automatically.{ColorStyle.RESET_ALL}")
+        if not service_running and self.service_manager.get_auto_start():
+            # Start the service if it's not running and auto-start is enabled
+            print(f"{Fore.YELLOW}Starting Log Collector service...{ColorStyle.RESET_ALL}")
+            success, message = self.service_manager.start_service()
+            if success:
+                print(f"{Fore.GREEN}Log Collector service started successfully.{ColorStyle.RESET_ALL}")
             else:
-                print(f"{Fore.YELLOW}Health check is configured but failed to start.{ColorStyle.RESET_ALL}")
+                print(f"{Fore.RED}Failed to start Log Collector service: {message}{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}You can start the service manually from the Service Status menu.{ColorStyle.RESET_ALL}")
         
         print("\nPress Enter to continue to main menu...")
         input()
@@ -150,7 +152,7 @@ class CLI:
         """Print application header."""
         print(f"{Fore.CYAN}======================================")
         print("         LOG COLLECTOR")
-        print(f"{Fore.LIGHTBLACK_EX}          2025 @ K.G.{ColorStyle.RESET_ALL}")
+        print(f"{Fore.LIGHTBLACK_EX}          K.G. @ 2025{ColorStyle.RESET_ALL}")
         print(f"{Fore.CYAN}======================================")
         print(f"Version: 1.0.0{ColorStyle.RESET_ALL}")
         print()
@@ -160,26 +162,35 @@ class CLI:
         clear()  # Ensure screen is cleared
         self._print_header()
         
-        # Show logged in user if authenticated
+        # Show logged in user if authenticated and service status
+        status_line = []
         if self.authenticated and self.current_user:
-            print(f"Logged in as: {Fore.GREEN}{self.current_user}{ColorStyle.RESET_ALL}")
+            status_line.append(f"Logged in as: {Fore.GREEN}{self.current_user}{ColorStyle.RESET_ALL}")
+        
+        # Add service status
+        service_status = get_service_status_summary(self.service_manager)
+        status_line.append(f"Service: {service_status}")
+        
+        if status_line:
+            print(" | ".join(status_line))
         
         print("\nMain Menu:")
         print("1. Add New Source")
         print("2. Manage Sources")
         print("3. Health Check Configuration")
         print("4. View Status")
+        print("5. Service Management")
         
         # Add change password option if auth_manager is available
         if self.auth_manager and self.authenticated:
-            print("5. Change Password")
+            print("6. Change Password")
+            print("7. Check for Updates")
+            print("8. Exit")
+            max_option = 8
+        else:
             print("6. Check for Updates")
             print("7. Exit")
             max_option = 7
-        else:
-            print("5. Check for Updates")
-            print("6. Exit")
-            max_option = 6
         
         choice = prompt(
             HTML(f"<ansicyan>Choose an option (1-{max_option}): </ansicyan>"),
@@ -194,10 +205,13 @@ class CLI:
             configure_health_check(self.health_check, self)
         elif choice == "4":
             view_status(self.source_manager, self.processor_manager, self.listener_manager, self.health_check, self.aggregation_manager, self.current_user)
-        elif choice == "5" and self.auth_manager and self.authenticated:
+        elif choice == "5":
+            # Service management
+            manage_service(self.service_manager, self)
+        elif choice == "6" and self.auth_manager and self.authenticated:
             # Change password
             change_password_screen(self.auth_manager, self.current_user, False, self)
-        elif (choice == "6" and self.auth_manager and self.authenticated) or (choice == "5" and (not self.auth_manager or not self.authenticated)):
+        elif (choice == "7" and self.auth_manager and self.authenticated) or (choice == "6" and (not self.auth_manager or not self.authenticated)):
             # Check for updates
             should_restart = check_for_updates(self)
             if should_restart:
@@ -208,7 +222,7 @@ class CLI:
                 self._clean_exit()
                 # After clean exit, restart the application
                 restart_application()
-        elif (choice == "7" and self.auth_manager and self.authenticated) or (choice == "6" and (not self.auth_manager or not self.authenticated)):
+        elif (choice == "8" and self.auth_manager and self.authenticated) or (choice == "7" and (not self.auth_manager or not self.authenticated)):
             self._exit_application()
             # If we return here, it means the user canceled the exit
             return
@@ -223,7 +237,6 @@ class CLI:
         if confirm.lower() == 'y':
             self._clean_exit()
             print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
-            print(f"{Fore.RED}(run 'python log_collector_service.py start' to start Log-Collector service){ColorStyle.RESET_ALL}")
             sys.exit(0)
         else:
             print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")
@@ -231,24 +244,15 @@ class CLI:
             
     def _clean_exit(self):
         """Clean up resources before exiting."""
-        print(f"{Fore.CYAN}Shutting down services...{ColorStyle.RESET_ALL}")
-        
-        # Restore terminal settings - move this to top of method
+        # Only restore terminal settings - don't stop the service
         if self.old_terminal_settings:
             restore_terminal(self.old_terminal_settings)
             self.old_terminal_settings = None
         
-        # Stop health check if running
-        if hasattr(self.health_check, 'running') and self.health_check.running:
-            print("- Stopping health check...")
-            self.health_check.stop()
+        # Log the exit
+        print(f"{Fore.CYAN}Exiting application. The service will continue running in the background.{ColorStyle.RESET_ALL}")
         
-        # Stop processor manager
-        print("- Stopping processors...")
-        self.processor_manager.stop()
-        
-        # Stop listener manager
-        print("- Stopping listeners...")
-        self.listener_manager.stop()
-        
-        print(f"{Fore.CYAN}All services stopped.{ColorStyle.RESET_ALL}")
+        # Check service status
+        if not self.service_manager.is_running():
+            print(f"{Fore.YELLOW}Note: The Log Collector service is not running.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}You can start it using 'python log_collector_service.py start' or from the Service Management menu.{ColorStyle.RESET_ALL}")

@@ -262,6 +262,18 @@ def main():
             # Log the PID for reference
             logger.info(f"Log Collector running with PID: {os.getpid()}")
             
+            # Write PID to file for service management
+            pid_file = os.environ.get('LOG_COLLECTOR_PID_FILE')
+            if pid_file:
+                try:
+                    with open(pid_file, 'w') as f:
+                        f.write(str(os.getpid()))
+                    # Register cleanup on exit
+                    atexit.register(lambda: os.remove(pid_file) if os.path.exists(pid_file) else None)
+                    logger.info(f"PID written to file: {pid_file}")
+                except Exception as e:
+                    logger.error(f"Error writing PID file: {e}")
+            
             # Instead of joining threads, use an infinite loop with sleep
             # This approach is more reliable for daemon processes
             try:

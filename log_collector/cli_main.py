@@ -80,6 +80,7 @@ class CLI:
                     print(f"{Fore.CYAN}Cleaning up resources...{ColorStyle.RESET_ALL}")
                     self._clean_exit()
                     print(f"{Fore.GREEN}Graceful shutdown completed. Goodbye!{ColorStyle.RESET_ALL}")
+                    print(f"{Fore.RED}(run 'python log_collector_service.py start' to start Log-Collector service){ColorStyle.RESET_ALL}")
                     sys.exit(0)
                 else:
                     print(f"{Fore.GREEN}Continuing...{ColorStyle.RESET_ALL}")

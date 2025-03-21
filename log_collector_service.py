@@ -404,6 +404,9 @@ else:
                 logger.error("Failed to start Log Collector service")
                 sys.exit(1)
             
+            # Pass the PID file location to the child process
+            os.environ['LOG_COLLECTOR_PID_FILE'] = args.pid_file
+            
             # Main service loop
             try:
                 while service.is_running:

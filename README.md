@@ -76,6 +76,13 @@ Start the application with the CLI interface:
 log_collector
 ```
 
+Default username and password:
+
+```bash
+user: admin
+pass: password
+```
+
 Run without the interactive interface (for service mode):
 
 ```bash

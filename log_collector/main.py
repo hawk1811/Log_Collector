@@ -10,7 +10,7 @@ import atexit
 import tempfile
 from pathlib import Path
 
-from log_collector.config import logger
+from log_collector.config import logger, DATA_DIR
 from log_collector.source_manager import SourceManager
 from log_collector.processor import ProcessorManager
 from log_collector.listener import LogListener
@@ -21,6 +21,8 @@ from log_collector import CLI
 from log_collector.utils import get_version
 from log_collector.filter_manager import FilterManager
 from log_collector.updater import restart_application
+# Import the new service module
+from log_collector.service_module import handle_service_command, DEFAULT_PID_FILE, DEFAULT_LOG_FILE
 
 
 def signal_handler(signum, frame):
@@ -59,149 +61,28 @@ def parse_args():
     parser.add_argument(
         "--pid-file",
         help="Path to PID file when running as daemon",
-        default=None
+        default=str(DEFAULT_PID_FILE)
+    )
+    parser.add_argument(
+        "--log-file",
+        help="Path to service log file",
+        default=str(DEFAULT_LOG_FILE)
+    )
+    
+    # Add service command group
+    service_group = parser.add_argument_group("Service commands")
+    service_group.add_argument(
+        "--service",
+        choices=["start", "stop", "restart", "status", "install"],
+        help="Manage the Log Collector service"
+    )
+    service_group.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run service in interactive/foreground mode"
     )
     
     return parser.parse_args()
-
-def daemonize(pid_file=None):
-    """Detach from the terminal and run as a daemon process.
-    
-    Args:
-        pid_file: Optional path to write PID file
-    """
-    # Platform-specific daemon implementation
-    if os.name == 'posix':  # Unix/Linux/macOS
-        try:
-            # First fork
-            pid = os.fork()
-            if pid > 0:
-                # Exit first parent
-                sys.exit(0)
-        except OSError as e:
-            logger.error(f"Fork #1 failed: {e}")
-            sys.exit(1)
-            
-        # Decouple from parent environment
-        os.chdir('/')
-        os.setsid()
-        os.umask(0)
-            
-        try:
-            # Second fork
-            pid = os.fork()
-            if pid > 0:
-                # Exit from second parent
-                sys.exit(0)
-        except OSError as e:
-            logger.error(f"Fork #2 failed: {e}")
-            sys.exit(1)
-            
-        # Redirect standard file descriptors
-        sys.stdout.flush()
-        sys.stderr.flush()
-        
-        si = open(os.devnull, 'r')
-        so = open(os.devnull, 'a+')
-        se = open(os.devnull, 'a+')
-        
-        os.dup2(si.fileno(), sys.stdin.fileno())
-        os.dup2(so.fileno(), sys.stdout.fileno())
-        os.dup2(se.fileno(), sys.stderr.fileno())
-        
-        # Write PID file if specified
-        if pid_file:
-            with open(pid_file, 'w') as f:
-                f.write(str(os.getpid()))
-            
-            # Remove PID file on exit
-            atexit.register(lambda: os.remove(pid_file) if os.path.exists(pid_file) else None)
-            
-        logger.info(f"Successfully daemonized process. PID: {os.getpid()}")
-            
-    elif os.name == 'nt':  # Windows
-        try:
-            # On Windows, we use the subprocess module to create a detached process
-            # Check if we're already detached
-            if not os.environ.get('LOG_COLLECTOR_DETACHED'):
-                import subprocess
-                
-                # Get the current executable path
-                python_exe = sys.executable
-                
-                # Get the main script path
-                if getattr(sys, 'frozen', False):
-                    # Running as compiled executable
-                    script_path = sys.executable
-                    args = sys.argv[1:]
-                else:
-                    # Running as script
-                    script_path = sys.argv[0]
-                    args = sys.argv[1:]
-                
-                # Remove --daemon from args to prevent infinite loop
-                if '--daemon' in args:
-                    args.remove('--daemon')
-                
-                # Add the --no-interactive flag if not already present
-                if '--no-interactive' not in args:
-                    args.append('--no-interactive')
-                
-                # Create a complete command list
-                if script_path.endswith('.py'):
-                    # If it's a Python script, use the Python executable
-                    cmd = [python_exe, script_path] + args
-                else:
-                    # If it's an executable, call it directly
-                    cmd = [script_path] + args
-                
-                # Set environment variables for the child process
-                env = os.environ.copy()
-                env['LOG_COLLECTOR_DETACHED'] = '1'
-                
-                # Create a detached process with no window
-                DETACHED_PROCESS = 0x00000008
-                CREATE_NO_WINDOW = 0x08000000
-                
-                logger.info(f"Launching detached process with command: {' '.join(cmd)}")
-                
-                # Start the detached process
-                process = subprocess.Popen(
-                    cmd,
-                    env=env,
-                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
-                    close_fds=True,
-                    shell=False
-                )
-                
-                # Log the PID for reference
-                logger.info(f"Detached process started with PID: {process.pid}")
-                
-                # Write PID file if specified
-                if pid_file:
-                    with open(pid_file, 'w') as f:
-                        f.write(str(process.pid))
-                
-                # Exit the parent
-                sys.exit(0)
-            
-            # If we're here, we're the child process
-            logger.info(f"Running as detached process. PID: {os.getpid()}")
-            
-            # Write PID file if specified and not already written by the parent
-            if pid_file and not os.path.exists(pid_file):
-                with open(pid_file, 'w') as f:
-                    f.write(str(os.getpid()))
-                
-                # Remove PID file on exit
-                atexit.register(lambda: os.remove(pid_file) if os.path.exists(pid_file) else None)
-            
-        except Exception as e:
-            logger.error(f"Failed to daemonize on Windows: {e}")
-            sys.exit(1)
-    else:
-        logger.error(f"Unsupported operating system: {os.name}")
-        sys.exit(1)
 
 def main():
     """Main entry point."""
@@ -213,9 +94,17 @@ def main():
         print(f"Log Collector version {get_version()}")
         return 0
     
+    # If a service command was specified, handle it and exit
+    if args.service:
+        pid_file = Path(args.pid_file)
+        log_file = Path(args.log_file)
+        result = handle_service_command(args.service, pid_file, log_file, args.interactive)
+        return 0 if result else 1
+    
     # Daemonize if requested
     if args.daemon:
         logger.info("Daemonizing process...")
+        from log_collector.service_module import daemonize
         daemonize(args.pid_file)
     
     # Register signal handlers
@@ -263,7 +152,7 @@ def main():
             logger.info(f"Log Collector running with PID: {os.getpid()}")
             
             # Write PID to file for service management
-            pid_file = os.environ.get('LOG_COLLECTOR_PID_FILE')
+            pid_file = args.pid_file
             if pid_file:
                 try:
                     with open(pid_file, 'w') as f:

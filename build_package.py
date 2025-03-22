@@ -36,9 +36,6 @@ build_exe_options = {
         "cryptography"
     ],
     
-    # Handle specific submodules that need explicit inclusion
-    "include_msvcr": True,
-    
     # More modules that might be missed in automatic detection
     # These are modules imported at runtime or via __import__
     "excludes": ["tkinter", "test", "pydoc_data"],
@@ -50,26 +47,11 @@ build_exe_options = {
         ("requirements.txt", "requirements.txt"),
     ],
     
-    # Path where to put frozen files
-    "build_exe": "build/exe",
-    
-    # Optimize Python bytecode to level 2
+    # Optimize Python bytecode
     "optimize": 2,
-    
-    # Compress the library archive
-    "compressed": True,
-    
-    # Skip these modules - detect automatically
-    "bin_excludes": [],
     
     # Path to search for modules
     "path": sys.path + ["log_collector"],
-    
-    # Add hooks to handle special cases
-    "zip_includes": [],
-    
-    # Silent mode (reduce console output)
-    "silent": False,
 }
 
 # Add platform-specific dependencies
@@ -98,33 +80,38 @@ executables = [
         # Base to use
         base=base,
         
-        # Copyright information
-        copyright="K.G - The Hawk © 2025",
-        
         # Icon for Windows executable
         icon=icon_path if is_windows and icon_path else None,
-        
-        # For Windows: Add shortcut to the desktop
-        shortcut_name="Log Collector",
-        shortcut_dir="DesktopFolder" if is_windows else None,
     )
 ]
 
 # On Windows, add a service installer executable
 if is_windows:
+    # Create a service installer script
+    with open("log_collector/service_installer.py", "w") as f:
+        f.write("""
+import sys
+import os
+
+# Add the arguments needed for service installation
+sys.argv.extend(["--service", "install"])
+
+# Import and run the main function
+from log_collector.main import main
+main()
+""")
+    
+    # Then add it to the executables
     executables.append(
         Executable(
             # Script for service installation
-            script="log_collector/main.py",
+            script="log_collector/service_installer.py",
             
             # Target name for the executable
             target_name="LogCollectorService.exe",
             
             # Base to use
             base=base,
-            
-            # Copyright information
-            copyright="K.G - The Hawk © 2025",
             
             # Icon for Windows executable
             icon=icon_path if icon_path else None,

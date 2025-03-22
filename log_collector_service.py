@@ -278,6 +278,82 @@ if platform.system() == 'Windows':
                 win32serviceutil.HandleCommandLine(WindowsService)
                 return
             
+            # Special handling for start command - use the Windows service controller
+            if len(sys.argv) > 1 and sys.argv[1] == "start":
+                try:
+                    # Try to start the Windows service if installed
+                    import subprocess
+                    result = subprocess.run(
+                        ["sc", "query", "LogCollector"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        check=False
+                    )
+                    
+                    if result.returncode == 0:
+                        # Service exists, start it
+                        print("Starting LogCollector Windows service...")
+                        result = subprocess.run(
+                            ["sc", "start", "LogCollector"],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            check=False
+                        )
+                        
+                        if result.returncode == 0:
+                            print("LogCollector service started successfully")
+                            return
+                        else:
+                            print(f"Failed to start LogCollector service: {result.stderr}")
+                            # Fall through to manual execution if service start fails
+                    else:
+                        print("LogCollector service is not installed. Starting in foreground mode.")
+                        # Fall through to manual execution
+                        
+                except Exception as e:
+                    print(f"Error starting service: {e}")
+                    # Fall through to manual execution
+            
+            # Special handling for stop command - use the Windows service controller
+            if len(sys.argv) > 1 and sys.argv[1] == "stop":
+                try:
+                    # Try to stop the Windows service if installed
+                    import subprocess
+                    result = subprocess.run(
+                        ["sc", "query", "LogCollector"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        check=False
+                    )
+                    
+                    if result.returncode == 0:
+                        # Service exists, stop it
+                        print("Stopping LogCollector Windows service...")
+                        result = subprocess.run(
+                            ["sc", "stop", "LogCollector"],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            check=False
+                        )
+                        
+                        if result.returncode == 0:
+                            print("LogCollector service stopped successfully")
+                            return
+                        else:
+                            print(f"Failed to stop LogCollector service: {result.stderr}")
+                            # Fall through to manual execution if service stop fails
+                    else:
+                        print("LogCollector service is not installed.")
+                        # Fall through to manual PID file handling
+                        
+                except Exception as e:
+                    print(f"Error stopping service: {e}")
+                    # Fall through to manual execution
+            
             # Check if we're running directly or as a service
             if len(sys.argv) == 1:
                 try:
@@ -405,6 +481,28 @@ if platform.system() == 'Windows':
                 
                 elif command == "status":
                     # Check if service is running
+                    # First check Windows service
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ["sc", "query", "LogCollector"],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            check=False
+                        )
+                        
+                        if result.returncode == 0 and "RUNNING" in result.stdout:
+                            print("LogCollector service is running")
+                            return
+                        elif result.returncode == 0 and "STOPPED" in result.stdout:
+                            print("LogCollector service is installed but not running")
+                            return
+                    except Exception:
+                        # Fall through to PID file check
+                        pass
+                        
+                    # Check PID file as fallback
                     if os.path.exists(pid_file):
                         try:
                             with open(pid_file, 'r') as f:

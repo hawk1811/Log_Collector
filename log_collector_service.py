@@ -183,17 +183,35 @@ if platform.system() == 'Windows':
                 # Register PID file location for cleanup
                 if "LOG_COLLECTOR_PID_FILE" in os.environ:
                     pid_file = os.environ["LOG_COLLECTOR_PID_FILE"]
-                    # Ensure PID directory exists
-                    pid_dir = os.path.dirname(pid_file)
-                    if pid_dir and not os.path.exists(pid_dir):
-                        os.makedirs(pid_dir, exist_ok=True)
-                    # Write PID file
-                    try:
-                        with open(pid_file, 'w') as f:
-                            f.write(str(os.getpid()))
-                        self.logger.info(f"Wrote PID file to {pid_file}")
-                    except Exception as e:
-                        self.logger.error(f"Failed to write PID file: {e}")
+                else:
+                    # Default PID file location
+                    pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service.pid')
+                    
+                # Ensure PID directory exists
+                pid_dir = os.path.dirname(pid_file)
+                if pid_dir and not os.path.exists(pid_dir):
+                    os.makedirs(pid_dir, exist_ok=True)
+                    
+                # Write PID file
+                try:
+                    with open(pid_file, 'w') as f:
+                        f.write(str(os.getpid()))
+                    self.logger.info(f"Wrote PID file to {pid_file}")
+                    
+                    # Register cleanup function
+                    def remove_pid_file():
+                        try:
+                            if os.path.exists(pid_file):
+                                os.remove(pid_file)
+                                self.logger.info(f"Removed PID file {pid_file}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to remove PID file: {e}")
+                    
+                    import atexit
+                    atexit.register(remove_pid_file)
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to write PID file: {e}")
                 
                 # Create service instance
                 self.service = LogCollectorService(self.logger)
@@ -214,6 +232,7 @@ if platform.system() == 'Windows':
                 
                 # Start the service
                 if not self.service.start():
+                    self.logger.error("Failed to start service")
                     self.SvcStop()
                     return
                 

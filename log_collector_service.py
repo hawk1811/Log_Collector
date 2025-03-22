@@ -37,7 +37,27 @@ def setup_logging(log_file):
     service_logger.addHandler(handler)
     
     return service_logger
-
+    
+# Helper function to get Working directory
+def get_correct_data_dir():
+    """Get the correct data directory path within the working directory."""
+    # In a packaged/installed environment, use the directory of the executable
+    if getattr(sys, 'frozen', False):
+        # Running as a bundled executable
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        # Running as a script - use the current working directory
+        base_dir = os.getcwd()
+    
+    # Create the data path within this directory
+    data_dir = os.path.join(base_dir, "data")
+    
+    # Ensure the directory exists
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+    
+    return data_dir
+    
 # Service components shared between platforms
 class LogCollectorService:
     """
@@ -166,13 +186,8 @@ if platform.system() == 'Windows':
                 self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
                 socket.setdefaulttimeout(60)
                 
-                # Base directory for data files
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                data_dir = os.path.join(base_dir, "data")
-                
-                # Ensure data directory exists
-                if not os.path.exists(data_dir):
-                    os.makedirs(data_dir, exist_ok=True)
+                # Get the correct data directory
+                data_dir = get_correct_data_dir()
                 
                 # Get log file path from environment if available, otherwise use default in data dir
                 if "LOG_COLLECTOR_LOG_FILE" in os.environ:
@@ -187,6 +202,7 @@ if platform.system() == 'Windows':
                 
                 self.logger = setup_logging(log_file)
                 self.logger.info(f"Windows service initialized with log file: {log_file}")
+                self.logger.info(f"Using data directory: {data_dir}")
                 
                 # Register PID file location for cleanup
                 if "LOG_COLLECTOR_PID_FILE" in os.environ:
@@ -226,7 +242,8 @@ if platform.system() == 'Windows':
                 
                 # Create service instance
                 self.service = LogCollectorService(self.logger)
-            
+        
+            # Rest of the class remains the same
             def SvcStop(self):
                 self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
                 win32event.SetEvent(self.hWaitStop)
@@ -363,13 +380,8 @@ else:
         parser.add_argument("action", choices=["start", "stop", "restart", "status"],
                           help="Action to perform")
         
-        # Get the base data directory
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        data_dir = os.path.join(base_dir, "data")
-        
-        # Ensure data directory exists
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir, exist_ok=True)
+        # Get the correct data directory
+        data_dir = get_correct_data_dir()
         
         # Use data directory for default paths
         default_pid_file = os.path.join(data_dir, "service.pid")
@@ -400,6 +412,7 @@ else:
         logger = setup_logging(log_file)
         logger.info(f"Using PID file: {pid_file}")
         logger.info(f"Using log file: {log_file}")
+        logger.info(f"Using data directory: {data_dir}")
         
         # Handle requested action
         if args.action == "status":
@@ -520,13 +533,8 @@ def main():
         print(f"Log Collector version {get_version()}")
         return 0
     
-    # Get the data directory path
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(base_dir, "data")
-    
-    # Ensure data directory exists
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir, exist_ok=True)
+    # Get the correct data directory
+    data_dir = get_correct_data_dir()
     
     # Default file paths in data directory
     default_pid_file = os.path.join(data_dir, "service.pid")

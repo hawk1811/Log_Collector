@@ -235,14 +235,36 @@ if platform.system() == 'Windows':
                         
         def register_windows_service():
             """Register the Log Collector as a Windows service"""
-            # We can add custom options for installation
-            if len(sys.argv) > 2 and sys.argv[2] == "--startup":
-                # Allows specifying startup type: auto, manual, disabled
+            # Get original argv to restore later
+            original_argv = sys.argv.copy()
+            
+            try:
+                # Clear sys.argv and add the service command
+                sys.argv = [sys.argv[0]]
+                
+                # Add the requested command (install, remove, etc.)
+                if len(original_argv) > 2:
+                    sys.argv.append(original_argv[2])  # Add "install", "remove", etc.
+                    
+                    # Add any additional arguments
+                    for i in range(3, len(original_argv)):
+                        sys.argv.append(original_argv[i])
+                else:
+                    # Default to "install" if no command specified
+                    sys.argv.append("install")
+                    
+                    # Set default startup mode to auto
+                    sys.argv.extend(["--startup", "auto"])
+                    
+                # Handle the service command
                 win32serviceutil.HandleCommandLine(WindowsService)
-            else:
-                # Set default startup mode to auto
-                sys.argv.extend(["--startup", "auto"])
-                win32serviceutil.HandleCommandLine(WindowsService)
+                return True
+            except Exception as e:
+                print(f"Error registering Windows service: {e}")
+                return False
+            finally:
+                # Restore original argv
+                sys.argv = original_argv
             
         def start_windows_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
             """Start the Log Collector service on Windows"""
@@ -860,8 +882,12 @@ def handle_service_command(command, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_
     elif command == "status":
         return get_service_status(pid_file)
     elif command == "install" and platform.system() == 'Windows':
-        register_windows_service()
-        return True
+        # For Windows, we need to handle the service registration differently
+        import win32serviceutil
+        
+        # This passes control to pywin32's command-line handler
+        # It expects the command (install, remove, etc.) as the first argument
+        return register_windows_service()
     else:
         print(f"Unknown service command: {command}")
         return False

@@ -165,8 +165,8 @@ if platform.system() == 'Windows':
         import socket
 
         class WindowsService(win32serviceutil.ServiceFramework):
-            _svc_name_ = "LogCollector"
-            _svc_display_name_ = "Log Collector Service"
+            _svc_name_ = "LogCollectorService"  # Service name
+            _svc_display_name_ = "Log Collector Service"  # Display name shown in services.msc
             _svc_description_ = "High-performance log collection and processing system"
             
             def __init__(self, args):
@@ -235,7 +235,14 @@ if platform.system() == 'Windows':
                         
         def register_windows_service():
             """Register the Log Collector as a Windows service"""
-            win32serviceutil.HandleCommandLine(WindowsService)
+            # We can add custom options for installation
+            if len(sys.argv) > 2 and sys.argv[2] == "--startup":
+                # Allows specifying startup type: auto, manual, disabled
+                win32serviceutil.HandleCommandLine(WindowsService)
+            else:
+                # Set default startup mode to auto
+                sys.argv.extend(["--startup", "auto"])
+                win32serviceutil.HandleCommandLine(WindowsService)
             
         def start_windows_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
             """Start the Log Collector service on Windows"""

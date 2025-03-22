@@ -166,9 +166,14 @@ if platform.system() == 'Windows':
                 self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
                 socket.setdefaulttimeout(60)
                 
-                # Setup logging
-                log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service.log')
+                # Setup logging - use environment variable if available
+                if "LOG_COLLECTOR_LOG_FILE" in os.environ:
+                    log_file = os.environ["LOG_COLLECTOR_LOG_FILE"]
+                else:
+                    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service.log')
+                
                 self.logger = setup_logging(log_file)
+                self.logger.info(f"Service initialized with log file: {log_file}")
                 
                 # Create service instance
                 self.service = LogCollectorService(self.logger)

@@ -471,6 +471,31 @@ def main():
         print(f"Log Collector version {get_version()}")
         return 0
     
+    # Check for environment variables for pid file and log file
+    pid_file_env = os.environ.get("LOG_COLLECTOR_PID_FILE")
+    log_file_env = os.environ.get("LOG_COLLECTOR_LOG_FILE")
+    
+    # If we're using the start command, look for pid-file and log-file args
+    if len(sys.argv) > 1 and sys.argv[1] == "start":
+        pid_file_arg = None
+        log_file_arg = None
+        
+        # Parse command line for pid-file and log-file
+        for i in range(2, len(sys.argv)):
+            if sys.argv[i] == "--pid-file" and i+1 < len(sys.argv):
+                pid_file_arg = sys.argv[i+1]
+            elif sys.argv[i] == "--log-file" and i+1 < len(sys.argv):
+                log_file_arg = sys.argv[i+1]
+        
+        # Update environment variables if args were provided
+        if pid_file_arg:
+            os.environ["LOG_COLLECTOR_PID_FILE"] = pid_file_arg
+            print(f"Setting PID file to: {pid_file_arg}")
+        
+        if log_file_arg:
+            os.environ["LOG_COLLECTOR_LOG_FILE"] = log_file_arg
+            print(f"Setting log file to: {log_file_arg}")
+    
     # Detect platform and run appropriate implementation
     if platform.system() == 'Windows':
         # Windows Service Implementation
@@ -480,7 +505,3 @@ def main():
         run_linux_daemon()
         
     return 0
-
-# Main entry point
-if __name__ == "__main__":
-    sys.exit(main())

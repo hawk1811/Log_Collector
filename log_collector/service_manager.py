@@ -175,19 +175,24 @@ class ServiceManager:
     
     def _check_status(self):
         """Check the actual status of the service and update state."""
-        # Get the PID from the file
-        pid = self._get_process_pid()
+        # First check using system service commands if available
+        is_running = self._check_service_running()
         
-        # Check if the process is running
-        is_running = self._is_process_running(pid)
+        # If we couldn't determine using system commands, fall back to PID file
+        if is_running is None:
+            # Get the PID from the file
+            pid = self._get_process_pid()
+            
+            # Check if the process is running
+            is_running = self._is_process_running(pid)
         
         # Update state
         self.state["running"] = is_running
-        self.state["pid"] = pid
+        self.state["pid"] = self._get_process_pid()  # Still try to get PID for info
         self.state["last_status_check"] = time.time()
         
         # Clean up stale PID file if needed
-        if not is_running and pid is not None and os.path.exists(self.pid_file):
+        if not is_running and os.path.exists(self.pid_file):
             try:
                 os.remove(self.pid_file)
                 self.state["pid"] = None
@@ -198,6 +203,70 @@ class ServiceManager:
         self._save_state(self.state)
         
         return is_running
+
+    def _check_service_running(self):
+        """Check if service is running using system service commands.
+        
+        Returns:
+            bool or None: True if running, False if not running, None if could not determine
+        """
+        if platform.system() == "Windows":
+            try:
+                # Check if the Windows service "LogCollector" is running
+                result = subprocess.run(
+                    ["sc", "query", "LogCollector"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+                
+                if result.returncode == 0 and "RUNNING" in result.stdout:
+                    return True
+                elif result.returncode == 0 and "STOPPED" in result.stdout:
+                    return False
+                else:
+                    # Service might not be installed or other issues
+                    logger.debug("Could not determine service status using sc query")
+                    return None
+            except Exception as e:
+                logger.debug(f"Error checking Windows service status: {e}")
+                return None
+        else:
+            # Linux/Unix platforms - check using systemctl
+            try:
+                result = subprocess.run(
+                    ["systemctl", "is-active", "log_collector.service"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+                
+                if result.returncode == 0 and result.stdout.strip() == "active":
+                    return True
+                elif result.returncode != 0:
+                    return False
+            except Exception as e:
+                # Try service command as fallback
+                try:
+                    result = subprocess.run(
+                        ["service", "log_collector", "status"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        check=False
+                    )
+                    
+                    if result.returncode == 0 and "running" in result.stdout.lower():
+                        return True
+                    else:
+                        return False
+                except Exception as e:
+                    logger.debug(f"Error checking Linux service status: {e}")
+                    return None
+                    
+            return None
     
     def start_service(self):
         """Start the Log Collector service."""
@@ -208,6 +277,11 @@ class ServiceManager:
         
         # Prepare command
         cmd = self._build_service_command("start")
+        
+        # Add the correct PID file path to the environment
+        env = os.environ.copy()
+        env["LOG_COLLECTOR_PID_FILE"] = str(self.pid_file)
+        env["LOG_COLLECTOR_LOG_FILE"] = str(self.log_file)
         
         try:
             # Start the service
@@ -225,14 +299,16 @@ class ServiceManager:
                     startupinfo=startupinfo,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.PIPE,
+                    env=env
                 )
             else:
                 # On Unix, we can just use subprocess.Popen with normal arguments
                 subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.PIPE,
+                    env=env
                 )
             
             # Wait for service to start

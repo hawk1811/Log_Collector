@@ -8,6 +8,7 @@ import threading
 import os
 import atexit
 import tempfile
+import platform  
 from pathlib import Path
 
 from log_collector.config import logger, DATA_DIR

@@ -707,10 +707,71 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
     os.makedirs(os.path.dirname(pid_file), exist_ok=True)
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     
+    # For non-interactive mode, always use subprocess to start in background
+    if not interactive:
+        try:
+            # Write starting marker to PID file
+            with open(pid_file, 'w') as f:
+                f.write("starting")
+                
+            # Prepare command to start the service
+            cmd = [sys.executable, "-m", "log_collector", "--service", "start", "--interactive",
+                   "--pid-file", str(pid_file), "--log-file", str(log_file)]
+            
+            # Start the process
+            if platform.system() == 'Windows':
+                import subprocess
+                
+                # Use CREATE_NO_WINDOW to hide the console window
+                CREATE_NO_WINDOW = 0x08000000
+                
+                # Use DETACHED_PROCESS to detach from parent
+                DETACHED_PROCESS = 0x00000008
+                
+                process = subprocess.Popen(
+                    cmd,
+                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+                    close_fds=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+            else:
+                # For Unix systems
+                import subprocess
+                
+                # Start detached process
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True  # Detaches from parent session
+                )
+                
+            # Give the process a moment to start
+            time.sleep(2)
+            
+            # Check if the process is running
+            if process.poll() is None:
+                # Still running, which is good
+                return True
+            else:
+                # Process exited too quickly, there might be an error
+                stdout, stderr = process.communicate()
+                print(f"Error starting service: {stderr.decode('utf-8', errors='ignore')}")
+                return False
+                
+        except Exception as e:
+            print(f"Error launching service process: {e}")
+            # Clean up PID file
+            if os.path.exists(pid_file):
+                os.remove(pid_file)
+            return False
+    
+    # Interactive mode (used by the subprocess created above)
     if platform.system() == 'Windows':
-        return start_windows_service(interactive, pid_file, log_file)
+        return start_windows_service(True, pid_file, log_file)
     else:
-        return start_linux_service(interactive, pid_file, log_file)
+        return start_linux_service(True, pid_file, log_file)
 
 def stop_service(pid_file=DEFAULT_PID_FILE):
     """Stop the Log Collector service (cross-platform)"""
@@ -792,4 +853,4 @@ def handle_service_command(command, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_
         return True
     else:
         print(f"Unknown service command: {command}")
-        return
+        return False

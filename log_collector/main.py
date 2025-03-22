@@ -98,6 +98,16 @@ def main():
     if args.service:
         pid_file = Path(args.pid_file)
         log_file = Path(args.log_file)
+        
+        # Special handling for Windows service installation
+        if args.service == "install" and platform.system() == "Windows":
+            # Import and use the service_module directly
+            from log_collector.service_module import register_windows_service
+            result = register_windows_service()
+            return 0 if result else 1
+        
+        # Handle other service commands
+        from log_collector.service_module import handle_service_command
         result = handle_service_command(args.service, pid_file, log_file, args.interactive)
         return 0 if result else 1
     

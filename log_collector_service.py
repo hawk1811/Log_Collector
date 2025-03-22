@@ -166,11 +166,19 @@ if platform.system() == 'Windows':
                 self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
                 socket.setdefaulttimeout(60)
                 
-                # Get log file path from environment if available, otherwise use default
+                # Base directory for data files
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                data_dir = os.path.join(base_dir, "data")
+                
+                # Ensure data directory exists
+                if not os.path.exists(data_dir):
+                    os.makedirs(data_dir, exist_ok=True)
+                
+                # Get log file path from environment if available, otherwise use default in data dir
                 if "LOG_COLLECTOR_LOG_FILE" in os.environ:
                     log_file = os.environ["LOG_COLLECTOR_LOG_FILE"]
                 else:
-                    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service.log')
+                    log_file = os.path.join(data_dir, 'service.log')
                 
                 # Ensure log directory exists
                 log_dir = os.path.dirname(log_file)
@@ -184,8 +192,8 @@ if platform.system() == 'Windows':
                 if "LOG_COLLECTOR_PID_FILE" in os.environ:
                     pid_file = os.environ["LOG_COLLECTOR_PID_FILE"]
                 else:
-                    # Default PID file location
-                    pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service.pid')
+                    # Default PID file location in data dir
+                    pid_file = os.path.join(data_dir, 'service.pid')
                     
                 # Ensure PID directory exists
                 pid_dir = os.path.dirname(pid_file)
@@ -197,6 +205,9 @@ if platform.system() == 'Windows':
                     with open(pid_file, 'w') as f:
                         f.write(str(os.getpid()))
                     self.logger.info(f"Wrote PID file to {pid_file}")
+                    
+                    # Store the path for reference in other methods
+                    self.pid_file = pid_file
                     
                     # Register cleanup function
                     def remove_pid_file():
@@ -222,6 +233,14 @@ if platform.system() == 'Windows':
                 
                 # Stop the service
                 self.service.stop()
+                
+                # Clean up PID file
+                try:
+                    if hasattr(self, 'pid_file') and os.path.exists(self.pid_file):
+                        os.remove(self.pid_file)
+                        self.logger.info(f"Removed PID file {self.pid_file} during stop")
+                except Exception as e:
+                    self.logger.error(f"Failed to remove PID file during stop: {e}")
             
             def SvcDoRun(self):
                 servicemanager.LogMsg(

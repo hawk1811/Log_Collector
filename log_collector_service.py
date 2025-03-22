@@ -471,9 +471,30 @@ def main():
         print(f"Log Collector version {get_version()}")
         return 0
     
+    # Get the data directory path
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(base_dir, "data")
+    
+    # Ensure data directory exists
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+    
+    # Default file paths in data directory
+    default_pid_file = os.path.join(data_dir, "service.pid")
+    default_log_file = os.path.join(data_dir, "service.log")
+    
     # Check for environment variables for pid file and log file
     pid_file_env = os.environ.get("LOG_COLLECTOR_PID_FILE")
     log_file_env = os.environ.get("LOG_COLLECTOR_LOG_FILE")
+    
+    # If environment variables are not set, use the defaults
+    if not pid_file_env:
+        os.environ["LOG_COLLECTOR_PID_FILE"] = default_pid_file
+        print(f"Using default PID file: {default_pid_file}")
+    
+    if not log_file_env:
+        os.environ["LOG_COLLECTOR_LOG_FILE"] = default_log_file
+        print(f"Using default log file: {default_log_file}")
     
     # If we're using the start command, look for pid-file and log-file args
     if len(sys.argv) > 1 and sys.argv[1] == "start":
@@ -495,6 +516,19 @@ def main():
         if log_file_arg:
             os.environ["LOG_COLLECTOR_LOG_FILE"] = log_file_arg
             print(f"Setting log file to: {log_file_arg}")
+    
+    # Ensure directories for PID and log files exist
+    pid_file = os.environ.get("LOG_COLLECTOR_PID_FILE", default_pid_file)
+    log_file = os.environ.get("LOG_COLLECTOR_LOG_FILE", default_log_file)
+    
+    pid_dir = os.path.dirname(pid_file)
+    log_dir = os.path.dirname(log_file)
+    
+    if pid_dir and not os.path.exists(pid_dir):
+        os.makedirs(pid_dir, exist_ok=True)
+    
+    if log_dir and not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
     
     # Detect platform and run appropriate implementation
     if platform.system() == 'Windows':

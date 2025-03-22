@@ -37,7 +37,7 @@ build_exe_options = {
     ],
     
     # Handle specific submodules that need explicit inclusion
-    "includedeps": True,
+    "include_msvcr": True,
     
     # More modules that might be missed in automatic detection
     # These are modules imported at runtime or via __import__
@@ -70,9 +70,6 @@ build_exe_options = {
     
     # Silent mode (reduce console output)
     "silent": False,
-    
-    # For better error checking during development, set to False in production
-    "includes_testing": False,
 }
 
 # Add platform-specific dependencies
@@ -131,9 +128,6 @@ if is_windows:
             
             # Icon for Windows executable
             icon=icon_path if icon_path else None,
-            
-            # Command line arguments for service installation
-            cmd_args=["--service", "install"],
         )
     )
 

@@ -123,27 +123,85 @@ def main():
         # Now we can import the actual LogCollector code
         # First, patch the configuration to use our data directory
         import log_collector.config
-
-        # Override config paths - IMPORTANT: Convert all Path objects to strings
-        log_collector.config.DATA_DIR = APP_DATA_DIR
-        log_collector.config.LOG_DIR = LOG_DIR
-        log_collector.config.SOURCES_FILE = os.path.join(APP_DATA_DIR, "sources.json")
         
-        # Also patch any other Path objects that might be in the config
-        # This is to prevent the 'WindowsPath' object is not subscriptable error
-        for attr_name in dir(log_collector.config):
-            attr = getattr(log_collector.config, attr_name)
-            if isinstance(attr, Path):
-                # Convert Path to string to avoid subscriptability issues
-                setattr(log_collector.config, attr_name, str(attr))
+        # Instead of replacing Path objects with strings, patch the Path methods
+        # This ensures compatibility with both string operations and Path methods
+        class PatchedPath(str):
+            def __new__(cls, path_str):
+                return super(PatchedPath, cls).__new__(cls, path_str)
+            
+            def exists(self):
+                return os.path.exists(self)
+            
+            def resolve(self):
+                return PatchedPath(os.path.abspath(self))
+            
+            def parent(self):
+                return PatchedPath(os.path.dirname(self))
+            
+            @property
+            def parents(self):
+                # Simple implementation that returns list of parent directories
+                parts = self.split(os.sep)
+                result = []
+                for i in range(len(parts)-1, 0, -1):
+                    result.append(PatchedPath(os.sep.join(parts[:i])))
+                return result
+            
+            def mkdir(self, parents=False, exist_ok=False):
+                if parents:
+                    os.makedirs(self, exist_ok=exist_ok)
+                else:
+                    try:
+                        os.mkdir(self)
+                    except FileExistsError:
+                        if not exist_ok:
+                            raise
+            
+            def __truediv__(self, other):
+                return PatchedPath(os.path.join(self, other))
+            
+            def __rtruediv__(self, other):
+                return PatchedPath(os.path.join(other, self))
         
-        # Patch service module paths if needed
+        # Override config paths with our patched versions
+        log_collector.config.DATA_DIR = PatchedPath(APP_DATA_DIR)
+        log_collector.config.LOG_DIR = PatchedPath(LOG_DIR)
+        log_collector.config.SOURCES_FILE = PatchedPath(os.path.join(APP_DATA_DIR, "sources.json"))
+        
+        # Patch service module paths
         try:
             import log_collector.service_module
-            log_collector.service_module.DEFAULT_PID_FILE = DEFAULT_PID_FILE
-            log_collector.service_module.DEFAULT_LOG_FILE = DEFAULT_LOG_FILE
+            log_collector.service_module.DEFAULT_PID_FILE = PatchedPath(DEFAULT_PID_FILE)
+            log_collector.service_module.DEFAULT_LOG_FILE = PatchedPath(DEFAULT_LOG_FILE)
         except ImportError:
             logger.warning("Could not patch service module paths")
+        
+        # Patch Path methods in other modules that might use them
+        try:
+            # Monkey-patch Path constructor to use our PatchedPath
+            original_path = Path
+            
+            def patched_path_constructor(*args, **kwargs):
+                result = original_path(*args, **kwargs)
+                return PatchedPath(str(result))
+            
+            # Replace Path in specific modules
+            sys.modules['pathlib'].Path = patched_path_constructor
+            
+            # Also patch Path objects in config modules directly
+            for module_name in list(sys.modules.keys()):
+                if module_name.startswith('log_collector.'):
+                    module = sys.modules[module_name]
+                    for attr_name in dir(module):
+                        try:
+                            attr = getattr(module, attr_name)
+                            if isinstance(attr, original_path):
+                                setattr(module, attr_name, PatchedPath(str(attr)))
+                        except (AttributeError, TypeError):
+                            pass
+        except Exception as e:
+            logger.warning(f"Error patching Path objects: {e}")
         
         # Process command-line arguments for service operations
         if len(sys.argv) > 1 and sys.argv[1] == "--service":
@@ -192,7 +250,7 @@ def main():
                 logger.error(f"Service module could not be imported: {e}")
                 return 1
         
-        # Import main function directly to prevent parse_args issues
+        # Import main function
         from log_collector.main import main as lc_main
         
         # Replace sys.argv with our modified version
@@ -212,28 +270,8 @@ def main():
             if arg not in ["--data-dir", "--log-dir", "--pid-file", "--log-file"] and not arg.startswith("--data-dir=") and not arg.startswith("--log-dir=") and not arg.startswith("--pid-file=") and not arg.startswith("--log-file="):
                 new_args.append(arg)
         
-        # Directly run the application's main function
-        # This bypasses the argparse error
+        # Replace sys.argv
         sys.argv = new_args
-        
-        # Monkey-patch main's parse_args to handle Path objects correctly
-        import log_collector.main
-        original_parse_args = log_collector.main.parse_args
-        
-        def patched_parse_args():
-            args = original_parse_args()
-            # Convert Path objects to strings if needed
-            if hasattr(args, 'data_dir') and args.data_dir and isinstance(args.data_dir, Path):
-                args.data_dir = str(args.data_dir)
-            if hasattr(args, 'log_dir') and args.log_dir and isinstance(args.log_dir, Path):
-                args.log_dir = str(args.log_dir)
-            if hasattr(args, 'pid_file') and args.pid_file and isinstance(args.pid_file, Path):
-                args.pid_file = str(args.pid_file)
-            if hasattr(args, 'log_file') and args.log_file and isinstance(args.log_file, Path):
-                args.log_file = str(args.log_file)
-            return args
-        
-        log_collector.main.parse_args = patched_parse_args
         
         # Run the main application
         logger.info("Starting LogCollector main application")

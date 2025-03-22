@@ -44,20 +44,15 @@ def setup_logging(log_file):
     
     return service_logger
     
-# Helper function to get Working directory
-def get_correct_data_dir():
-    """Get the correct data directory path within the working directory."""
-    # Start with the current working directory as base
-    base_dir = os.getcwd()
-    print(f"Current working directory: {base_dir}")
+# Helper function to get data directory
+def get_data_dir():
+    """Get the data directory path - simply ./data relative to script location"""
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Use sys.executable location if running as exe
-    if getattr(sys, 'frozen', False):
-        base_dir = os.path.dirname(sys.executable)
-        print(f"Frozen executable directory: {base_dir}")
-    
-    # Create data path within the base directory
-    data_dir = os.path.join(base_dir, "data")
+    # Create data path within this directory
+    data_dir = os.path.join(script_dir, "data")
+    print(f"Script directory: {script_dir}")
     print(f"Using data directory: {data_dir}")
     
     # Ensure the directory exists
@@ -195,8 +190,8 @@ if platform.system() == 'Windows':
                 self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
                 socket.setdefaulttimeout(60)
                 
-                # Get the correct data directory
-                data_dir = get_correct_data_dir()
+                # Get the data directory
+                data_dir = get_data_dir()
                 
                 # Get log file path from environment if available, otherwise use default in data dir
                 if "LOG_COLLECTOR_LOG_FILE" in os.environ:
@@ -204,29 +199,17 @@ if platform.system() == 'Windows':
                 else:
                     log_file = os.path.join(data_dir, 'service.log')
                 
-                # Ensure log directory exists
-                log_dir = os.path.dirname(log_file)
-                if log_dir and not os.path.exists(log_dir):
-                    os.makedirs(log_dir, exist_ok=True)
-                
-                self.logger = setup_logging(log_file)
-                self.logger.info(f"Windows service initialized with log file: {log_file}")
-                self.logger.info(f"Using data directory: {data_dir}")
-                
-                # Register PID file location for cleanup
+                # Get pid file path from environment if available, otherwise use default in data dir
                 if "LOG_COLLECTOR_PID_FILE" in os.environ:
                     pid_file = os.environ["LOG_COLLECTOR_PID_FILE"]
                 else:
-                    # Default PID file location in data dir
                     pid_file = os.path.join(data_dir, 'service.pid')
                 
+                # Setup logging
+                self.logger = setup_logging(log_file)
+                self.logger.info(f"Windows service initialized with log file: {log_file}")
                 self.logger.info(f"Using PID file: {pid_file}")
-                    
-                # Ensure PID directory exists
-                pid_dir = os.path.dirname(pid_file)
-                if pid_dir and not os.path.exists(pid_dir):
-                    os.makedirs(pid_dir, exist_ok=True)
-                    
+                
                 # Write PID file
                 try:
                     with open(pid_file, 'w') as f:
@@ -253,7 +236,7 @@ if platform.system() == 'Windows':
                 
                 # Create service instance
                 self.service = LogCollectorService(self.logger)
-        
+            
             def SvcStop(self):
                 self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
                 win32event.SetEvent(self.hWaitStop)
@@ -289,151 +272,173 @@ if platform.system() == 'Windows':
                         break
         
         def run_windows_service():
-            # Check if we're running the service interactively
-            if len(sys.argv) == 1 and not os.environ.get('LOG_COLLECTOR_INTERACTIVE'):
-                # Handle service mode
-                servicemanager.Initialize()
-                servicemanager.PrepareToHostSingle(WindowsService)
-                servicemanager.StartServiceCtrlDispatcher()
-            elif len(sys.argv) > 1 and sys.argv[1] in ['install', 'update', 'remove', '--startup', '-h', '--help']:
+            # Check if first argument is a service command
+            if len(sys.argv) > 1 and sys.argv[1] in ['install', 'update', 'remove', '--startup', '-h', '--help']:
                 # Handle service management commands
                 win32serviceutil.HandleCommandLine(WindowsService)
-            else:
-                # Handle interactive mode (like start/stop commands)
-                # Set a flag to indicate we're running interactively
-                os.environ['LOG_COLLECTOR_INTERACTIVE'] = '1'
+                return
+            
+            # Check if we're running directly or as a service
+            if len(sys.argv) == 1:
+                try:
+                    # Try to run as a Windows service
+                    servicemanager.Initialize()
+                    servicemanager.PrepareToHostSingle(WindowsService)
+                    servicemanager.StartServiceCtrlDispatcher()
+                    return
+                except Exception as e:
+                    print(f"Not running as a service: {e}")
+                    # Fall through to run manually
+            
+            # If we reach here, we're running manually
+            # Handle commands directly
+            if len(sys.argv) > 1:
+                command = sys.argv[1]
                 
-                # Get the data directory for direct execution
-                data_dir = get_correct_data_dir()
+                # Get the data directory
+                data_dir = get_data_dir()
                 
-                # Get default file paths
+                # Set default file paths
                 default_pid_file = os.path.join(data_dir, 'service.pid')
                 default_log_file = os.path.join(data_dir, 'service.log')
                 
-                # Use environment variables if set, otherwise use defaults
-                pid_file = os.environ.get("LOG_COLLECTOR_PID_FILE", default_pid_file)
-                log_file = os.environ.get("LOG_COLLECTOR_LOG_FILE", default_log_file)
+                # Parse arguments for custom paths
+                pid_file = default_pid_file
+                log_file = default_log_file
                 
-                # Setup logging
-                service_logger = setup_logging(log_file)
-                service_logger.info(f"Running in interactive mode with PID file: {pid_file}")
-                service_logger.info(f"Log file: {log_file}")
+                for i in range(2, len(sys.argv)):
+                    if sys.argv[i] == "--pid-file" and i+1 < len(sys.argv):
+                        pid_file = sys.argv[i+1]
+                    elif sys.argv[i] == "--log-file" and i+1 < len(sys.argv):
+                        log_file = sys.argv[i+1]
                 
-                # Handle commands
-                if len(sys.argv) > 1:
-                    if sys.argv[1] == 'start':
-                        # Write PID file
+                print(f"Using PID file: {pid_file}")
+                print(f"Using log file: {log_file}")
+                
+                if command == "start":
+                    # Run service manually
+                    print("Starting Log Collector service in foreground mode")
+                    
+                    # Setup logging
+                    service_logger = setup_logging(log_file)
+                    service_logger.info("Starting in foreground mode")
+                    
+                    # Write PID file
+                    try:
+                        with open(pid_file, 'w') as f:
+                            f.write(str(os.getpid()))
+                        service_logger.info(f"Wrote PID file to {pid_file}")
+                    except Exception as e:
+                        service_logger.error(f"Failed to write PID file: {e}")
+                        return
+                    
+                    # Start service
+                    service = LogCollectorService(service_logger)
+                    
+                    # Register cleanup
+                    def cleanup():
+                        service.stop()
                         try:
-                            with open(pid_file, 'w') as f:
-                                f.write(str(os.getpid()))
-                            service_logger.info(f"Wrote PID file to {pid_file}")
+                            if os.path.exists(pid_file):
+                                os.remove(pid_file)
+                                service_logger.info(f"Removed PID file {pid_file}")
                         except Exception as e:
-                            service_logger.error(f"Failed to write PID file: {e}")
-                            return
+                            service_logger.error(f"Error removing PID file: {e}")
+                    
+                    import atexit
+                    atexit.register(cleanup)
+                    
+                    if service.start():
+                        service_logger.info("Service started in foreground mode")
+                        print("Service started (press Ctrl+C to stop)")
                         
-                        # Start service
-                        service = LogCollectorService(service_logger)
-                        if service.start():
-                            service_logger.info("Service started in interactive mode")
-                            print("Service started in interactive mode")
-                            print("Press Ctrl+C to stop")
+                        # Main loop
+                        try:
+                            while service.is_running:
+                                time.sleep(1)
+                        except KeyboardInterrupt:
+                            service_logger.info("Keyboard interrupt received, stopping service")
+                            cleanup()
+                            print("Service stopped")
+                    else:
+                        service_logger.error("Failed to start service")
+                        print("Failed to start service")
+                
+                elif command == "stop":
+                    # Check if service is running
+                    if os.path.exists(pid_file):
+                        try:
+                            with open(pid_file, 'r') as f:
+                                pid = int(f.read().strip())
                             
-                            # Register cleanup
-                            def cleanup():
-                                service.stop()
-                                try:
-                                    if os.path.exists(pid_file):
-                                        os.remove(pid_file)
-                                        service_logger.info(f"Removed PID file {pid_file}")
-                                except Exception as e:
-                                    service_logger.error(f"Error removing PID file: {e}")
-                            
-                            import atexit
-                            atexit.register(cleanup)
-                            
-                            # Main loop
+                            # Try to send a signal
+                            import signal
                             try:
-                                while service.is_running:
-                                    time.sleep(1)
-                            except KeyboardInterrupt:
-                                service_logger.info("Keyboard interrupt received, stopping service")
-                                cleanup()
-                        else:
-                            service_logger.error("Failed to start service")
-                            print("Failed to start service")
-                    elif sys.argv[1] == 'stop':
-                        # Check if service is running
-                        try:
-                            if os.path.exists(pid_file):
-                                with open(pid_file, 'r') as f:
-                                    pid = int(f.read().strip())
-                                
-                                # Try to send a signal
-                                try:
-                                    if platform.system() == 'Windows':
-                                        import ctypes
-                                        kernel32 = ctypes.windll.kernel32
-                                        PROCESS_TERMINATE = 1
-                                        handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
-                                        if handle:
-                                            kernel32.TerminateProcess(handle, 0)
-                                            kernel32.CloseHandle(handle)
-                                            print(f"Service with PID {pid} terminated")
-                                        else:
-                                            print(f"Process with PID {pid} not found")
+                                if platform.system() == 'Windows':
+                                    import ctypes
+                                    kernel32 = ctypes.windll.kernel32
+                                    PROCESS_TERMINATE = 1
+                                    handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+                                    if handle:
+                                        kernel32.TerminateProcess(handle, 0)
+                                        kernel32.CloseHandle(handle)
+                                        print(f"Service with PID {pid} terminated")
                                     else:
-                                        os.kill(pid, signal.SIGTERM)
-                                        print(f"Stop signal sent to PID {pid}")
-                                        
-                                    # Remove PID file
+                                        print(f"Process with PID {pid} not found")
+                                else:
+                                    os.kill(pid, signal.SIGTERM)
+                                    print(f"Stop signal sent to PID {pid}")
+                                
+                                # Remove PID file
+                                os.remove(pid_file)
+                                print("PID file removed")
+                            except Exception as e:
+                                print(f"Error terminating process: {e}")
+                                # Remove stale PID file
+                                if os.path.exists(pid_file):
                                     os.remove(pid_file)
-                                    print("PID file removed")
-                                except (OSError, PermissionError) as e:
-                                    print(f"Error terminating process: {e}")
-                                    # Remove stale PID file
-                                    if os.path.exists(pid_file):
-                                        os.remove(pid_file)
-                                        print("Removed stale PID file")
-                            else:
-                                print("Service is not running (PID file not found)")
+                                    print("Removed stale PID file")
                         except Exception as e:
-                            print(f"Error stopping service: {e}")
-                    elif sys.argv[1] == 'status':
-                        # Check if service is running
+                            print(f"Error reading PID file: {e}")
+                    else:
+                        print("Service is not running (PID file not found)")
+                
+                elif command == "status":
+                    # Check if service is running
+                    if os.path.exists(pid_file):
                         try:
-                            if os.path.exists(pid_file):
-                                with open(pid_file, 'r') as f:
-                                    pid = int(f.read().strip())
-                                
-                                # Check if process exists
-                                try:
-                                    if platform.system() == 'Windows':
-                                        import ctypes
-                                        kernel32 = ctypes.windll.kernel32
-                                        PROCESS_QUERY_INFORMATION = 0x0400
-                                        handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
-                                        if handle:
-                                            kernel32.CloseHandle(handle)
-                                            print(f"Service is running (PID: {pid})")
-                                        else:
-                                            print("Service is not running (stale PID file)")
-                                            os.remove(pid_file)
-                                    else:
-                                        os.kill(pid, 0)  # Signal 0 tests if process exists
+                            with open(pid_file, 'r') as f:
+                                pid = int(f.read().strip())
+                            
+                            # Check if process exists
+                            import signal
+                            try:
+                                if platform.system() == 'Windows':
+                                    import ctypes
+                                    kernel32 = ctypes.windll.kernel32
+                                    PROCESS_QUERY_INFORMATION = 0x0400
+                                    handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
+                                    if handle:
+                                        kernel32.CloseHandle(handle)
                                         print(f"Service is running (PID: {pid})")
-                                except (OSError, PermissionError):
-                                    print("Service is not running (stale PID file)")
-                                    if os.path.exists(pid_file):
+                                    else:
+                                        print("Service is not running (stale PID file)")
                                         os.remove(pid_file)
-                            else:
-                                print("Service is not running (PID file not found)")
+                                else:
+                                    os.kill(pid, 0)  # Signal 0 tests if process exists
+                                    print(f"Service is running (PID: {pid})")
+                            except:
+                                print("Service is not running (stale PID file)")
+                                if os.path.exists(pid_file):
+                                    os.remove(pid_file)
                         except Exception as e:
                             print(f"Error checking service status: {e}")
                     else:
-                        win32serviceutil.HandleCommand(None, sys.argv[1:], WindowsService)
+                        print("Service is not running (PID file not found)")
                 else:
-                    # No command specified
                     print("Usage: python log_collector_service.py [start|stop|status|install|remove]")
+            else:
+                print("Usage: python log_collector_service.py [start|stop|status|install|remove]")
 
     except ImportError:
         def run_windows_service():
@@ -529,8 +534,8 @@ else:
         parser.add_argument("action", choices=["start", "stop", "restart", "status"],
                           help="Action to perform")
         
-        # Get the correct data directory
-        data_dir = get_correct_data_dir()
+        # Get the data directory
+        data_dir = get_data_dir()
         
         # Use data directory for default paths
         default_pid_file = os.path.join(data_dir, "service.pid")
@@ -551,21 +556,10 @@ else:
         print(f"PID file: {pid_file}")
         print(f"Log file: {log_file}")
         
-        # Ensure directories exist
-        pid_dir = os.path.dirname(pid_file)
-        log_dir = os.path.dirname(log_file)
-        
-        if pid_dir and not os.path.exists(pid_dir):
-            os.makedirs(pid_dir, exist_ok=True)
-        
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        
         # Setup logging
         logger = setup_logging(log_file)
         logger.info(f"Using PID file: {pid_file}")
         logger.info(f"Using log file: {log_file}")
-        logger.info(f"Using data directory: {data_dir}")
         
         # Handle requested action
         if args.action == "status":
@@ -643,54 +637,54 @@ else:
             
             print("Starting Log Collector...")
             
-            # Store paths in environment for child processes
-            os.environ["LOG_COLLECTOR_PID_FILE"] = pid_file
-            os.environ["LOG_COLLECTOR_LOG_FILE"] = log_file
-            
-            # Determine if we're running in interactive mode
-            if os.environ.get('LOG_COLLECTOR_INTERACTIVE') == '1':
-                # Start in foreground mode
-                logger.info("Starting in foreground (interactive) mode")
-                print("Starting in foreground mode (press Ctrl+C to stop)")
+            # Check if interactive mode was requested
+            if "--interactive" in sys.argv:
+                # Run in foreground mode
+                print("Starting in foreground mode")
                 
                 # Write PID file
-                with open(pid_file, 'w') as f:
-                    f.write(str(os.getpid()))
-                
-                # Create and start the service
-                service = LogCollectorService(logger)
-                
-                # Set up signal handlers
-                def sigterm_handler(signum, frame):
-                    logger.info("Received termination signal")
-                    service.stop()
-                    # Clean up PID file
-                    if os.path.exists(pid_file):
-                        os.remove(pid_file)
-                    sys.exit(0)
-                
-                signal.signal(signal.SIGTERM, sigterm_handler)
-                signal.signal(signal.SIGINT, sigterm_handler)
-                
-                # Start the service
-                if not service.start():
-                    logger.error("Failed to start Log Collector service")
-                    if os.path.exists(pid_file):
-                        os.remove(pid_file)
+                try:
+                    with open(pid_file, 'w') as f:
+                        f.write(str(os.getpid()))
+                    logger.info(f"Wrote PID file: {pid_file}")
+                except Exception as e:
+                    logger.error(f"Failed to write PID file: {e}")
                     sys.exit(1)
                 
-                # Main loop
-                try:
-                    while service.is_running:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    logger.info("Keyboard interrupt received")
+                # Start service
+                service = LogCollectorService(logger)
+                
+                # Handle signals
+                def cleanup(signum, frame):
+                    logger.info(f"Received signal {signum}, stopping")
                     service.stop()
-                    if os.path.exists(pid_file):
-                        os.remove(pid_file)
+                    try:
+                        if os.path.exists(pid_file):
+                            os.remove(pid_file)
+                    except:
+                        pass
                     sys.exit(0)
+                
+                signal.signal(signal.SIGTERM, cleanup)
+                signal.signal(signal.SIGINT, cleanup)
+                
+                # Start the service
+                if service.start():
+                    logger.info("Service started")
+                    print("Service running in foreground (press Ctrl+C to stop)")
+                    
+                    # Main loop
+                    try:
+                        while service.is_running:
+                            time.sleep(1)
+                    except KeyboardInterrupt:
+                        cleanup(signal.SIGINT, None)
+                else:
+                    logger.error("Failed to start service")
+                    print("Failed to start service")
+                    sys.exit(1)
             else:
-                # Daemonize the process
+                # Daemonize
                 daemonize(pid_file)
                 
                 # Create and start the service
@@ -729,8 +723,8 @@ def main():
         print(f"Log Collector version {get_version()}")
         return 0
     
-    # Get the correct data directory
-    data_dir = get_correct_data_dir()
+    # Get the data directory 
+    data_dir = get_data_dir()
     
     # Default file paths in data directory
     default_pid_file = os.path.join(data_dir, "service.pid")
@@ -740,70 +734,23 @@ def main():
     print(f"Default PID file: {default_pid_file}")
     print(f"Default log file: {default_log_file}")
     
-    # Check for environment variables for pid file and log file
-    pid_file_env = os.environ.get("LOG_COLLECTOR_PID_FILE")
-    log_file_env = os.environ.get("LOG_COLLECTOR_LOG_FILE")
-    
-    # If environment variables are not set, use the defaults
-    if not pid_file_env:
+    # Set environment variables for child processes
+    if "LOG_COLLECTOR_PID_FILE" not in os.environ:
         os.environ["LOG_COLLECTOR_PID_FILE"] = default_pid_file
-        print(f"Using default PID file: {default_pid_file}")
     
-    if not log_file_env:
+    if "LOG_COLLECTOR_LOG_FILE" not in os.environ:
         os.environ["LOG_COLLECTOR_LOG_FILE"] = default_log_file
-        print(f"Using default log file: {default_log_file}")
     
-    # If we're using the start command, look for pid-file and log-file args
-    if len(sys.argv) > 1 and sys.argv[1] == "start":
-        pid_file_arg = None
-        log_file_arg = None
+    # Detect platform and run appropriate implementation
+    if platform.system() == 'Windows':
+        # Windows Service Implementation
+        run_windows_service()
+    else:
+        # Linux/Unix Daemon Implementation
+        run_linux_daemon()
         
-        # Parse command line for pid-file and log-file
-        for i in range(2, len(sys.argv)):
-            if sys.argv[i] == "--pid-file" and i+1 < len(sys.argv):
-                pid_file_arg = sys.argv[i+1]
-            elif sys.argv[i] == "--log-file" and i+1 < len(sys.argv):
-                log_file_arg = sys.argv[i+1]
-        
-        # Update environment variables if args were provided
-        if pid_file_arg:
-            os.environ["LOG_COLLECTOR_PID_FILE"] = pid_file_arg
-            print(f"Setting PID file to: {pid_file_arg}")
-        
-        if log_file_arg:
-            os.environ["LOG_COLLECTOR_LOG_FILE"] = log_file_arg
-            print(f"Setting log file to: {log_file_arg}")
-    
-    # Check if we're running directly (not through service)
-    if len(sys.argv) > 1 and sys.argv[1] in ['start', 'stop', 'restart', 'status'] and not sys.argv[0].endswith('win32service.exe'):
-        os.environ['LOG_COLLECTOR_INTERACTIVE'] = '1'
-        print("Running in interactive mode")
-    
-    # Ensure directories for PID and log files exist
-        pid_file = os.environ.get("LOG_COLLECTOR_PID_FILE", default_pid_file)
-        log_file = os.environ.get("LOG_COLLECTOR_LOG_FILE", default_log_file)
-        
-        pid_dir = os.path.dirname(pid_file)
-        log_dir = os.path.dirname(log_file)
-        
-        if pid_dir and not os.path.exists(pid_dir):
-            os.makedirs(pid_dir, exist_ok=True)
-            print(f"Created PID directory: {pid_dir}")
-        
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-            print(f"Created log directory: {log_dir}")
-        
-        # Detect platform and run appropriate implementation
-        if platform.system() == 'Windows':
-            # Windows Service Implementation
-            run_windows_service()
-        else:
-            # Linux/Unix Daemon Implementation
-            run_linux_daemon()
-            
-        return 0
-    
-    # Entry point when run directly
-    if __name__ == "__main__":
-        sys.exit(main())                        
+    return 0
+
+# Entry point when run directly
+if __name__ == "__main__":
+    sys.exit(main())

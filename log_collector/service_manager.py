@@ -185,6 +185,18 @@ class ServiceManager:
             
             # Check if the process is running
             is_running = self._is_process_running(pid)
+            
+            # Additional check for "starting" marker
+            if not is_running and os.path.exists(self.pid_file):
+                try:
+                    with open(self.pid_file, 'r') as f:
+                        content = f.read().strip()
+                    if content == "starting":
+                        # Service is still starting up
+                        logger.debug("Service is in starting state according to PID file")
+                        is_running = False  # Don't consider it running yet
+                except Exception:
+                    pass
         
         # Update state
         self.state["running"] = is_running
@@ -194,8 +206,11 @@ class ServiceManager:
         # Clean up stale PID file if needed
         if not is_running and os.path.exists(self.pid_file):
             try:
-                os.remove(self.pid_file)
-                self.state["pid"] = None
+                with open(self.pid_file, 'r') as f:
+                    content = f.read().strip()
+                if content != "starting":  # Don't remove if it's still starting
+                    os.remove(self.pid_file)
+                    self.state["pid"] = None
             except OSError as e:
                 logger.error(f"Error removing stale PID file: {e}")
         
@@ -280,6 +295,22 @@ class ServiceManager:
         # Prepare command
         cmd = self._build_service_command("start")
         
+        # Create the directories for PID and log files if they don't exist
+        pid_dir = os.path.dirname(self.pid_file)
+        log_dir = os.path.dirname(self.log_file)
+        
+        try:
+            if pid_dir and not os.path.exists(pid_dir):
+                os.makedirs(pid_dir, exist_ok=True)
+                logger.info(f"Created PID directory: {pid_dir}")
+                
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+                logger.info(f"Created log directory: {log_dir}")
+        except Exception as e:
+            logger.error(f"Error creating directories: {e}")
+            return False, f"Error creating directories: {e}"
+        
         # Add the correct PID file path to the environment
         env = os.environ.copy()
         env["LOG_COLLECTOR_PID_FILE"] = str(self.pid_file)
@@ -290,20 +321,75 @@ class ServiceManager:
             logger.info(f"Starting service with command: {' '.join(cmd)}")
             
             if platform.system() == "Windows":
-                # On Windows, we need to use subprocess.CREATE_NEW_PROCESS_GROUP
-                # to detach the process
+                # On Windows, use subprocess.CREATE_NEW_PROCESS_GROUP to detach the process
+                
+                # First, check if we're trying to start the Windows service
+                if self._is_windows_service_installed():
+                    # Try to start the Windows service using sc
+                    result = subprocess.run(
+                        ["sc", "start", "LogCollector"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        check=False
+                    )
+                    
+                    if result.returncode == 0:
+                        # Wait for service to start
+                        time.sleep(2)
+                        if self._check_status():
+                            self.state["start_time"] = time.time()
+                            self._save_state(self.state)
+                            return True, "Windows service started successfully"
+                
+                # Fall back to command-line approach
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = 0  # SW_HIDE
                 
-                subprocess.Popen(
-                    cmd,
+                # Use absolute paths for the Python executable and script
+                if cmd[0] == sys.executable:
+                    python_exe = cmd[0]
+                else:
+                    python_exe = sys.executable
+                    
+                if len(cmd) > 1 and os.path.exists(cmd[1]):
+                    script_path = os.path.abspath(cmd[1])
+                    new_cmd = [python_exe, script_path] + cmd[2:]
+                else:
+                    new_cmd = cmd
+                    
+                logger.info(f"Starting service with modified command: {' '.join(new_cmd)}")
+                
+                # First write a direct marker to the PID file to help with status detection
+                try:
+                    with open(self.pid_file, 'w') as f:
+                        f.write("starting")
+                except Exception as e:
+                    logger.warning(f"Could not write starting marker to PID file: {e}")
+                
+                process = subprocess.Popen(
+                    new_cmd,
                     startupinfo=startupinfo,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env=env
                 )
+                
+                # Give the process a moment to start
+                time.sleep(1)
+                
+                # Try to get some output to diagnose issues
+                try:
+                    stdout, stderr = process.communicate(timeout=2)
+                    if stderr:
+                        logger.error(f"Process stderr: {stderr.decode('utf-8', errors='ignore')}")
+                    if stdout:
+                        logger.info(f"Process stdout: {stdout.decode('utf-8', errors='ignore')}")
+                except subprocess.TimeoutExpired:
+                    # This is normal - the process is still running
+                    pass
             else:
                 # On Unix, we can just use subprocess.Popen with normal arguments
                 subprocess.Popen(
@@ -314,18 +400,49 @@ class ServiceManager:
                 )
             
             # Wait for service to start
-            for _ in range(10):
+            for i in range(15):  # Increased timeout to 15 seconds
                 time.sleep(1)
                 if self._check_status():
                     self.state["start_time"] = time.time()
                     self._save_state(self.state)
                     return True, "Service started successfully"
+                
+                # Check if the PID file exists but doesn't contain a valid PID yet
+                if os.path.exists(self.pid_file):
+                    try:
+                        with open(self.pid_file, 'r') as f:
+                            content = f.read().strip()
+                        if content == "starting":
+                            # Still starting, continue waiting
+                            logger.info(f"Service still starting (attempt {i+1})")
+                            continue
+                    except Exception:
+                        pass
             
+            logger.error("Service failed to start within timeout")
             return False, "Service failed to start within timeout"
         
         except Exception as e:
             logger.error(f"Error starting service: {e}")
             return False, f"Error starting service: {e}"
+
+    def _is_windows_service_installed(self):
+        """Check if the LogCollector Windows service is installed."""
+        if platform.system() != "Windows":
+            return False
+            
+        try:
+            result = subprocess.run(
+                ["sc", "query", "LogCollector"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            
+            return result.returncode == 0
+        except Exception:
+            return False
     
     def stop_service(self):
         """Stop the Log Collector service."""

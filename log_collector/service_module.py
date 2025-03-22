@@ -165,8 +165,8 @@ if platform.system() == 'Windows':
         import socket
 
         class WindowsService(win32serviceutil.ServiceFramework):
-            _svc_name_ = "LogCollectorService"  # Service name
-            _svc_display_name_ = "Log Collector Service"  # Display name shown in services.msc
+            _svc_name_ = "LogCollectorService"
+            _svc_display_name_ = "Log Collector Service"
             _svc_description_ = "High-performance log collection and processing system"
             
             def __init__(self, args):
@@ -538,9 +538,21 @@ def is_process_running(pid):
         return False
         
     try:
-        os.kill(pid, 0)  # Signal 0 tests if process exists
-        return True
-    except OSError:
+        if platform.system() == "Windows":
+            # Windows-specific process check
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            PROCESS_QUERY_INFORMATION = 0x0400
+            process = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
+            if process != 0:
+                kernel32.CloseHandle(process)
+                return True
+            return False
+        else:
+            # Unix-specific check
+            os.kill(pid, 0)  # Signal 0 tests if process exists
+            return True
+    except (ImportError, OSError):
         return False
 
 def check_service_status(pid_file=DEFAULT_PID_FILE):
@@ -732,6 +744,12 @@ def stop_linux_service(pid_file=DEFAULT_PID_FILE):
 # Cross-platform functions
 def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
     """Start the Log Collector service (cross-platform)"""
+    # Check if already running
+    pid = get_pid_from_file(pid_file)
+    if pid is not None and is_process_running(pid):
+        print(f"Service is already running (PID: {pid})")
+        return True
+        
     # Ensure directories exist
     os.makedirs(os.path.dirname(pid_file), exist_ok=True)
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -744,7 +762,6 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 f.write("starting")
                 
             # Prepare command to start the service
-            # Instead of using "python -m log_collector", use the main script directly
             # Get the path to the main.py script
             main_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log_collector", "main.py")
             
@@ -786,6 +803,8 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
             # Check if the process is running
             if process.poll() is None:
                 # Still running, which is good
+                print(f"Service starting in background mode. Check logs at: {log_file}")
+                print(f"PID file location: {pid_file}")
                 return True
             else:
                 # Process exited too quickly, there might be an error

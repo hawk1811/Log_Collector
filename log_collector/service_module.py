@@ -715,7 +715,11 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 f.write("starting")
                 
             # Prepare command to start the service
-            cmd = [sys.executable, "-m", "log_collector", "--service", "start", "--interactive",
+            # Instead of using "python -m log_collector", use the main script directly
+            # Get the path to the main.py script
+            main_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log_collector", "main.py")
+            
+            cmd = [sys.executable, main_script, "--service", "start", "--interactive",
                    "--pid-file", str(pid_file), "--log-file", str(log_file)]
             
             # Start the process

@@ -123,20 +123,22 @@ def main():
         # Now we can import the actual LogCollector code
         # First, patch the configuration to use our data directory
         import log_collector.config
-        orig_data_dir = log_collector.config.DATA_DIR
-        orig_log_dir = log_collector.config.LOG_DIR
-        
-        # Override config paths
+
+        # Override config paths - IMPORTANT: Convert all Path objects to strings
         log_collector.config.DATA_DIR = APP_DATA_DIR
         log_collector.config.LOG_DIR = LOG_DIR
         log_collector.config.SOURCES_FILE = os.path.join(APP_DATA_DIR, "sources.json")
         
-        # Import the main function
-        from log_collector.main import main as lc_main
+        # Also patch any other Path objects that might be in the config
+        # This is to prevent the 'WindowsPath' object is not subscriptable error
+        for attr_name in dir(log_collector.config):
+            attr = getattr(log_collector.config, attr_name)
+            if isinstance(attr, Path):
+                # Convert Path to string to avoid subscriptability issues
+                setattr(log_collector.config, attr_name, str(attr))
         
         # Patch service module paths if needed
         try:
-            from log_collector.service_module import DEFAULT_PID_FILE, DEFAULT_LOG_FILE
             import log_collector.service_module
             log_collector.service_module.DEFAULT_PID_FILE = DEFAULT_PID_FILE
             log_collector.service_module.DEFAULT_LOG_FILE = DEFAULT_LOG_FILE
@@ -152,8 +154,7 @@ def main():
                     start_service,
                     stop_service,
                     restart_service,
-                    get_service_status,
-                    register_windows_service
+                    get_service_status
                 )
                 
                 if service_cmd == "start":
@@ -178,6 +179,8 @@ def main():
                 
                 elif service_cmd == "install" and platform.system() == "Windows":
                     logger.info(f"Installing Windows service")
+                    # Import here to prevent errors on non-Windows platforms
+                    from log_collector.service_module import register_windows_service
                     success = register_windows_service()
                     return 0 if success else 1
                 
@@ -189,26 +192,48 @@ def main():
                 logger.error(f"Service module could not be imported: {e}")
                 return 1
         
-        # Modify sys.argv to include our paths
-        new_args = []
-        i = 0
-        while i < len(sys.argv):
-            arg = sys.argv[i]
-            if arg in ("--data-dir", "--log-dir", "--pid-file", "--log-file"):
-                # Skip these arguments and their values
-                i += 2
-            else:
-                new_args.append(arg)
-                i += 1
+        # Import main function directly to prevent parse_args issues
+        from log_collector.main import main as lc_main
         
-        # Add our custom paths
+        # Replace sys.argv with our modified version
+        old_argv = sys.argv.copy()
+        
+        # Build new arguments
+        new_args = [old_argv[0]]  # Keep the original executable name
+        
+        # Add data directory arguments explicitly
         new_args.extend(["--data-dir", APP_DATA_DIR])
         new_args.extend(["--log-dir", LOG_DIR])
         new_args.extend(["--pid-file", DEFAULT_PID_FILE])
         new_args.extend(["--log-file", DEFAULT_LOG_FILE])
         
-        # Replace sys.argv
+        # Add any other arguments that aren't related to paths
+        for arg in old_argv[1:]:
+            if arg not in ["--data-dir", "--log-dir", "--pid-file", "--log-file"] and not arg.startswith("--data-dir=") and not arg.startswith("--log-dir=") and not arg.startswith("--pid-file=") and not arg.startswith("--log-file="):
+                new_args.append(arg)
+        
+        # Directly run the application's main function
+        # This bypasses the argparse error
         sys.argv = new_args
+        
+        # Monkey-patch main's parse_args to handle Path objects correctly
+        import log_collector.main
+        original_parse_args = log_collector.main.parse_args
+        
+        def patched_parse_args():
+            args = original_parse_args()
+            # Convert Path objects to strings if needed
+            if hasattr(args, 'data_dir') and args.data_dir and isinstance(args.data_dir, Path):
+                args.data_dir = str(args.data_dir)
+            if hasattr(args, 'log_dir') and args.log_dir and isinstance(args.log_dir, Path):
+                args.log_dir = str(args.log_dir)
+            if hasattr(args, 'pid_file') and args.pid_file and isinstance(args.pid_file, Path):
+                args.pid_file = str(args.pid_file)
+            if hasattr(args, 'log_file') and args.log_file and isinstance(args.log_file, Path):
+                args.log_file = str(args.log_file)
+            return args
+        
+        log_collector.main.parse_args = patched_parse_args
         
         # Run the main application
         logger.info("Starting LogCollector main application")

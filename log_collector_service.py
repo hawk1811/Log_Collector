@@ -362,22 +362,51 @@ else:
         parser = argparse.ArgumentParser(description="Log Collector Service")
         parser.add_argument("action", choices=["start", "stop", "restart", "status"],
                           help="Action to perform")
-        parser.add_argument("--pid-file", default="/var/run/log_collector.pid",
+        
+        # Get the base data directory
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(base_dir, "data")
+        
+        # Ensure data directory exists
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir, exist_ok=True)
+        
+        # Use data directory for default paths
+        default_pid_file = os.path.join(data_dir, "service.pid")
+        default_log_file = os.path.join(data_dir, "service.log")
+        
+        parser.add_argument("--pid-file", default=default_pid_file,
                           help="Path to PID file")
-        parser.add_argument("--log-file", default="/var/log/log_collector/service.log",
+        parser.add_argument("--log-file", default=default_log_file,
                           help="Path to log file")
         
         args = parser.parse_args()
         
+        # Use environment variables if set, otherwise use args
+        pid_file = os.environ.get("LOG_COLLECTOR_PID_FILE", args.pid_file)
+        log_file = os.environ.get("LOG_COLLECTOR_LOG_FILE", args.log_file)
+        
+        # Ensure directories exist
+        pid_dir = os.path.dirname(pid_file)
+        log_dir = os.path.dirname(log_file)
+        
+        if pid_dir and not os.path.exists(pid_dir):
+            os.makedirs(pid_dir, exist_ok=True)
+        
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        
         # Setup logging
-        logger = setup_logging(args.log_file)
+        logger = setup_logging(log_file)
+        logger.info(f"Using PID file: {pid_file}")
+        logger.info(f"Using log file: {log_file}")
         
         # Handle requested action
         if args.action == "status":
-            sys.exit(0 if status(args.pid_file, logger) else 1)
+            sys.exit(0 if status(pid_file, logger) else 1)
         
         elif args.action == "stop":
-            pid = get_pid(args.pid_file)
+            pid = get_pid(pid_file)
             if pid is None:
                 print("Log Collector is not running")
                 sys.exit(0)
@@ -394,16 +423,16 @@ else:
                         os.kill(pid, 0)
                     except OSError:
                         # Process has terminated
-                        if os.path.exists(args.pid_file):
-                            os.remove(args.pid_file)
+                        if os.path.exists(pid_file):
+                            os.remove(pid_file)
                         print("Log Collector stopped")
                         sys.exit(0)
                 
                 # Force kill if it didn't terminate
                 print("Forcing termination...")
                 os.kill(pid, signal.SIGKILL)
-                if os.path.exists(args.pid_file):
-                    os.remove(args.pid_file)
+                if os.path.exists(pid_file):
+                    os.remove(pid_file)
                 print("Log Collector stopped (forced)")
                 sys.exit(0)
                 
@@ -413,7 +442,7 @@ else:
         
         elif args.action == "restart":
             # Stop if running
-            pid = get_pid(args.pid_file)
+            pid = get_pid(pid_file)
             if pid is not None:
                 try:
                     os.kill(pid, signal.SIGTERM)
@@ -429,8 +458,8 @@ else:
                         # Force kill if it didn't terminate
                         os.kill(pid, signal.SIGKILL)
                     
-                    if os.path.exists(args.pid_file):
-                        os.remove(args.pid_file)
+                    if os.path.exists(pid_file):
+                        os.remove(pid_file)
                     
                     print("Log Collector stopped")
                     time.sleep(2)  # Wait before restarting
@@ -442,14 +471,18 @@ else:
         
         if args.action in ["start", "restart"]:
             # Check if already running
-            if get_pid(args.pid_file) is not None:
+            if get_pid(pid_file) is not None:
                 print("Log Collector is already running")
                 sys.exit(1)
             
             print("Starting Log Collector...")
             
+            # Store paths in environment for child processes
+            os.environ["LOG_COLLECTOR_PID_FILE"] = pid_file
+            os.environ["LOG_COLLECTOR_LOG_FILE"] = log_file
+            
             # Daemonize the process
-            daemonize(args.pid_file)
+            daemonize(pid_file)
             
             # Create and start the service
             service = LogCollectorService(logger)
@@ -466,9 +499,6 @@ else:
             if not service.start():
                 logger.error("Failed to start Log Collector service")
                 sys.exit(1)
-            
-            # Pass the PID file location to the child process
-            os.environ['LOG_COLLECTOR_PID_FILE'] = args.pid_file
             
             # Main service loop
             try:

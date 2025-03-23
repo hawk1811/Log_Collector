@@ -5,12 +5,11 @@ Handles log filter policy management and processing.
 import os
 import json
 import time
-from pathlib import Path
 
 from log_collector.config import (
     logger,
-    get_app_context,
 )
+from log_collector.app_context import get_app_context
 
 # Get app context
 app_context = get_app_context()
@@ -39,7 +38,7 @@ class FilterManager:
             logger.info(f"Loaded {len(self.filters)} filter policies")
         except Exception as e:
             logger.error(f"Error loading filter policies: {e}")
-    
+        
     def _save_filters(self):
         """Save filter policies to file."""
         try:

@@ -751,6 +751,10 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
         aggregation_manager: Optional aggregation manager instance
         filter_manager: Optional filter manager instance
     """
+    # Track last template check time
+    last_check_time = 0
+    refresh_interval = 2  # Check for new templates every 2 seconds
+    
     while True:
         clear()
         cli._print_header()
@@ -760,9 +764,13 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
             input("Press Enter to continue...")
             return
         
-        # Auto-save template if not already saved
-        if aggregation_manager:
-            aggregation_manager.ensure_template(source_id, processor_manager)
+        # Current time for template check
+        current_time = time.time()
+        
+        # Auto-save template if not already saved - check periodically
+        if aggregation_manager and (current_time - last_check_time > refresh_interval):
+            has_template = aggregation_manager.ensure_template(source_id, processor_manager)
+            last_check_time = current_time
         
         print(f"{Fore.CYAN}=== Manage Source: {source['source_name']} ==={ColorStyle.RESET_ALL}")
         print(f"\nSource ID: {source_id}")
@@ -849,6 +857,7 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
                     print(f"\n{Fore.CYAN}Log Template:{ColorStyle.RESET_ALL} Available for configuration")
             else:
                 print(f"\n{Fore.YELLOW}Log Template: Waiting for first log to be received{ColorStyle.RESET_ALL}")
+                print(f"{Fore.YELLOW}(Checking for new logs every {refresh_interval} seconds){ColorStyle.RESET_ALL}")
         
         print("\nOptions:")
         print("1. Edit Source")
@@ -875,6 +884,7 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
             option_count += 1
         
         print(f"{option_count}. Return to Sources List")
+        print(f"{option_count+1}. Refresh View")
         
         choice = prompt(
             HTML("<ansicyan>Choose an option: </ansicyan>"),
@@ -913,6 +923,14 @@ def manage_source(source_id, source_manager, processor_manager, listener_manager
             delete_template(source_id, source_manager, aggregation_manager, cli)
         elif choice == str(option_count):
             return
+        elif choice == str(option_count+1):
+            # Force refresh - just continue the loop
+            if aggregation_manager:
+                # Force template check
+                aggregation_manager.ensure_template(source_id, processor_manager)
+                print(f"{Fore.GREEN}View refreshed.{ColorStyle.RESET_ALL}")
+                time.sleep(0.5)  # Brief pause to show the message
+            continue
         else:
             print(f"{Fore.RED}Invalid choice. Please try again.{ColorStyle.RESET_ALL}")
             input("Press Enter to continue...")

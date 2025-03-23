@@ -8,10 +8,16 @@ import time
 import signal
 import platform
 import logging
+from pathlib import Path
 
-from log_collector.config import (
-    logger,
-)
+# Import Log Collector components - add these explicit imports
+from log_collector.source_manager import SourceManager
+from log_collector.processor import ProcessorManager
+from log_collector.listener import LogListener
+from log_collector.health_check import HealthCheck
+from log_collector.aggregation_manager import AggregationManager
+from log_collector.filter_manager import FilterManager
+from log_collector.config import logger
 from log_collector.app_context import get_app_context
 
 # Get app context

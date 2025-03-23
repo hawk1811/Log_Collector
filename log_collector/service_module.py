@@ -764,11 +764,16 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 f.write("starting")
                 
             # Prepare command to start the service
-            # Get the path to the main.py script
-            main_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log_collector", "main.py")
-            
-            cmd = [sys.executable, main_script, "--service", "start", "--interactive",
-                   "--pid-file", str(pid_file), "--log-file", str(log_file)]
+            # Get the path to the current executable instead of main.py
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                cmd = [sys.executable, "--service", "start", "--interactive",
+                      "--pid-file", str(pid_file), "--log-file", str(log_file)]
+            else:
+                # Running as script
+                main_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log_collector", "main.py")
+                cmd = [sys.executable, main_script, "--service", "start", "--interactive",
+                      "--pid-file", str(pid_file), "--log-file", str(log_file)]
             
             # Start the process
             if platform.system() == 'Windows':
@@ -820,19 +825,6 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
             if os.path.exists(pid_file):
                 os.remove(pid_file)
             return False
-    
-    # Interactive mode (used by the subprocess created above)
-    if platform.system() == 'Windows':
-        return start_windows_service(True, pid_file, log_file)
-    else:
-        return start_linux_service(True, pid_file, log_file)
-
-def stop_service(pid_file=DEFAULT_PID_FILE):
-    """Stop the Log Collector service (cross-platform)"""
-    if platform.system() == 'Windows':
-        return stop_windows_service(pid_file)
-    else:
-        return stop_linux_service(pid_file)
 
 def restart_service(pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
     """Restart the Log Collector service (cross-platform)"""

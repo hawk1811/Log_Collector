@@ -1,6 +1,6 @@
 # Log Collector Project Index
 
-This document provides a detailed index of all files in the Log Collector project with explanations of each function's purpose.
+This document provides a detailed index of all files in the Log Collector project with explanations of each module's purpose.
 
 ## Core Files
 
@@ -9,7 +9,6 @@ Application entry point for the Log Collector application.
 
 - `signal_handler(signum, frame)`: Handles termination signals for clean shutdowns
 - `parse_args()`: Parses command line arguments for the application
-- `daemonize()`: Detaches the process from the terminal and runs in background mode 
 - `main()`: Main entry point that initializes all components and starts the application
 
 ### log_collector/__init__.py
@@ -22,9 +21,20 @@ Configuration module for application-wide settings and constants.
 
 - `load_sources()`: Loads source configurations from JSON file
 - `save_sources(sources)`: Saves source configurations to JSON file
+- Initializes logging configuration
+- Defines default system settings and constants
+
+### log_collector/app_context.py
+Provides consistent path management across different deployment methods.
+
+- `AppContext`: Class that manages application paths
+  - `_determine_base_dir()`: Determines base directory for application files
+  - `_get_data_dir()`, `_get_log_dir()`: Determine paths for data and logs
+  - Several methods to determine paths for configuration files
+- `get_app_context()`: Singleton pattern function to get the application context
 
 ### log_collector/utils.py
-Utility functions for cross-platform terminal handling and formatting.
+Cross-platform terminal handling and formatting utilities.
 
 - `setup_terminal()`: Sets up terminal for non-blocking input
 - `restore_terminal(old_settings)`: Restores terminal settings
@@ -74,6 +84,7 @@ Manages log processing queues and worker threads.
 - `_process_batch(batch, source)`: Processes a batch of logs
 - `_deliver_to_folder(batch, source)`: Delivers a batch of logs to a folder with optional compression
 - `_deliver_to_hec(batch, source)`: Delivers a batch of logs to HEC
+- `_process_and_deliver_batch(batch, source, source_id)`: Processes and delivers a batch of logs
 
 ### log_collector/health_check.py
 Manages system health monitoring and reporting.
@@ -92,12 +103,7 @@ Manages log aggregation policies and processing.
 - `ensure_template(source_id, processor_manager)`: Ensures a log template exists for a source
 - `store_log_template(source_id, log_content)`: Stores a log template for a source
 - `_extract_fields(log_content)`: Extracts fields from log content
-- `_extract_fields_from_dict(data, fields, prefix)`: Recursively extracts fields from dictionary
-- `_extract_key_value_pairs(log_content, fields)`: Extracts fields from key=value pairs format
-- `_add_key_value_field(key, value, fields)`: Helper method to add a key-value pair to fields with type detection
-- `_extract_delimited(log_content, delimiter, fields)`: Extracts fields from a delimited string
-- `_extract_colon_separated(log_content, fields)`: Extracts fields from colon-separated format
-- `_extract_space_separated(log_content, fields)`: Extracts fields from space-separated values
+- Several methods for extracting fields from different log formats
 - `create_policy(source_id, selected_fields)`: Creates or updates an aggregation policy
 - `update_policy(source_id, updates)`: Updates an existing policy
 - `delete_policy(source_id)`: Deletes an aggregation policy
@@ -129,6 +135,35 @@ Manages user authentication and password security.
 - `validate_password(password)`: Validates a password against security requirements
 - `change_password(username, old_password, new_password)`: Changes a user's password
 - `reset_password(username, new_password)`: Resets a user's password to a default value or specified password
+- Various helper methods for password hashing and security
+
+### log_collector/service_module.py
+Handles service implementation for Windows and Linux platforms.
+
+- `setup_service_logging(log_file)`: Sets up logging for the service
+- `LogCollectorService`: Core service class with start, stop, and initialization methods
+- `daemonize(pid_file)`: Creates a daemon process on Linux
+- `get_pid_from_file(pid_file)`: Gets PID from a file
+- `is_process_running(pid)`: Checks if a process is running
+- `start_service(interactive, pid_file, log_file)`: Starts the service
+- `stop_service(pid_file)`: Stops the service
+- `restart_service(pid_file, log_file)`: Restarts the service
+- `get_service_status(pid_file)`: Gets service status
+- `handle_service_command(command, pid_file, log_file, interactive)`: Handles service commands
+- Platform-specific service implementations (Windows/Linux)
+
+### log_collector/service_manager.py
+Manages Log Collector service lifecycle.
+
+- `is_running()`: Checks if the service is running
+- `start_service()`: Starts the Log Collector service
+- `stop_service()`: Stops the Log Collector service
+- `restart_service()`: Restarts the Log Collector service
+- `get_service_log(lines)`: Gets the last N lines from the service log
+- `set_auto_start(enabled)`: Sets whether the service should auto-start
+- `get_auto_start()`: Gets whether the service should auto-start
+- `get_status_info()`: Gets detailed status information
+- Internal methods for state management
 
 ### log_collector/updater.py
 Update module for checking for updates, pulling from git, and upgrading the package.
@@ -150,7 +185,7 @@ Update module for checking for updates, pulling from git, and upgrading the pack
 ### log_collector/cli_main.py
 Command Line Interface main module with the core CLI class and main menu functions.
 
-- `start()`: Starts CLI interface
+- `CLI.start()`: Starts CLI interface
 - `_print_header()`: Prints application header
 - `_show_main_menu()`: Displays main menu and handles commands
 - `_exit_application()`: Exits the application cleanly
@@ -177,7 +212,7 @@ Source management module for adding, updating, and deleting log sources.
 
 - `add_source(source_manager, processor_manager, listener_manager, cli)`: Adds a new log source
 - `edit_source(source_id, source_manager, processor_manager, listener_manager, cli)`: Edits a source configuration
-- `delete_source(source_id, source_manager, processor_manager, listener_manager)`: Deletes a source
+- `delete_source(source_id, source_manager, processor_manager, listener_manager, cli)`: Deletes a source
 - `view_template_fields(source_id, source_manager, aggregation_manager, cli)`: Views all fields in a log template
 - `delete_template(source_id, source_manager, aggregation_manager, cli)`: Deletes a log template
 - `delete_aggregation_rule(source_id, source_manager, aggregation_manager, cli)`: Deletes an aggregation rule
@@ -219,14 +254,47 @@ CLI module for managing log filter rules.
 - `edit_filter_rule(source_manager, aggregation_manager, filter_manager, cli)`: Edits an existing filter rule
 - `remove_filter_rule(source_manager, aggregation_manager, filter_manager, cli)`: Removes a filter rule
 
+### log_collector/cli_service.py
+CLI module for service management.
+
+- `manage_service(service_manager, cli)`: Manages the Log Collector service
+- `view_service_log(service_manager, cli)`: Views the Log Collector service log
+- `get_service_status_summary(service_manager)`: Gets a summary of the service status for display
+
+## Build Scripts
+
+### build-win.bat
+Windows build script for creating standalone executable.
+
+- Creates a stand-alone Windows executable using PyInstaller
+- Sets up data and logs directories
+- Creates a README.txt file with usage instructions
+- Creates a zip file containing the application
+
+### build-lin.sh
+Linux build script for creating standalone executable.
+
+- Creates a stand-alone Linux executable using PyInstaller
+- Sets up data and logs directories
+- Creates a README.txt file with usage instructions
+- Creates a zip file containing the application
+
 ## Package Configuration Files
 
 ### setup.py
 Package setup configuration for installation.
 
 - Package metadata and dependency management
+- Entry point configuration for the command-line interface
 
 ### pyproject.toml
 Python project configuration using modern standards.
 
-- Build system requirements
+- Build system requirements for setuptools and wheel
+
+### requirements.txt
+Lists all package dependencies with version constraints.
+
+- Core dependencies: requests, psutil, prompt_toolkit, colorama
+- Security: bcrypt, cryptography
+- System utilities and other requirements

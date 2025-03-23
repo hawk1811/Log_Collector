@@ -20,6 +20,8 @@ from log_collector.filter_manager import FilterManager
 from log_collector.config import logger
 from log_collector.app_context import get_app_context
 
+
+
 # Get app context
 app_context = get_app_context()
 
@@ -836,6 +838,13 @@ def restart_service(pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
     
     # Start the service
     return start_service(False, pid_file, log_file)
+
+def stop_service(pid_file=DEFAULT_PID_FILE):
+    """Stop the Log Collector service (cross-platform)"""
+    if platform.system() == 'Windows':
+        return stop_windows_service(pid_file)
+    else:
+        return stop_linux_service(pid_file)
 
 def get_service_status(pid_file=DEFAULT_PID_FILE):
     """Get service status (cross-platform)"""

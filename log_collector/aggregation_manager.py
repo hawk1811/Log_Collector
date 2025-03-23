@@ -59,6 +59,21 @@ class AggregationManager:
             logger.error(f"Error saving aggregation policies: {e}")
             return False
 
+    def reload_templates(self):
+        """Explicitly reload templates from disk to ensure up-to-date data."""
+        try:
+            if POLICY_FILE.exists():
+                with open(POLICY_FILE, "r") as f:
+                    data = json.load(f)
+                    self.templates = data.get("templates", {})
+                    self.policies = data.get("policies", {})
+                logger.info(f"Reloaded {len(self.templates)} templates and {len(self.policies)} policies")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error reloading templates: {e}")
+            return False
+
     def ensure_template(self, source_id, processor_manager):
         """Ensure a log template exists for a source, creating one if needed.
         

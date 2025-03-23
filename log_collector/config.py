@@ -5,20 +5,19 @@ Handles global settings and constants.
 import os
 import json
 import logging
-from pathlib import Path
 
-# Import AppContext
-from log_collector.app_context import AppContext
+# Import application context
+from log_collector.app_context import get_app_context
 
-# Create application context
-app_context = AppContext()
+# Get app context
+app_context = get_app_context()
 
 # Application directories
 BASE_DIR = app_context.base_dir
 DATA_DIR = app_context.data_dir
 LOG_DIR = app_context.log_dir
 
-# Configuration files
+# Source configuration file
 SOURCES_FILE = app_context.sources_file
 
 # Default settings
@@ -32,7 +31,7 @@ DEFAULT_COMPRESSION_LEVEL = 9  # Default compression level (9 is highest)
 
 # Configure logging
 logging.basicConfig(
-    filename=os.path.join(LOG_DIR, "log_collector.log"),
+    filename=str(LOG_DIR / "log_collector.log"),
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -48,7 +47,7 @@ logger.addHandler(console_handler)
 
 def load_sources():
     """Load source configurations from JSON file."""
-    if not os.path.exists(SOURCES_FILE):
+    if not SOURCES_FILE.exists():
         return {}
     
     try:
@@ -67,8 +66,3 @@ def save_sources(sources):
     except Exception as e:
         logger.error(f"Error saving sources file: {e}")
         return False
-
-# Provide access to the app context throughout the application
-def get_app_context():
-    """Get the application context."""
-    return app_context

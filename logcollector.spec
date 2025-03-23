@@ -6,9 +6,7 @@ a = Analysis(
     ['log_collector/main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('data', 'data'),
-    ],
+    datas=[],
     hiddenimports=[
         'prompt_toolkit.styles.pygments',
         'prompt_toolkit.styles.style_elements',

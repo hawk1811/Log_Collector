@@ -11,10 +11,16 @@ from pathlib import Path
 
 from log_collector.config import (
     logger,
-    DATA_DIR,
+    get_app_context,
 )
 
-# Import our new service module functions
+# Get app context
+app_context = get_app_context()
+
+# Constants
+SERVICE_STATE_FILE = app_context.service_state_file
+
+# Import service module functions
 from log_collector.service_module import (
     start_service,
     stop_service,
@@ -22,27 +28,22 @@ from log_collector.service_module import (
     get_service_status,
     is_process_running,
     get_pid_from_file,
-    DEFAULT_PID_FILE,
-    DEFAULT_LOG_FILE,
 )
-
-# Constants
-SERVICE_STATE_FILE = DATA_DIR / "service_state.json"
 
 class ServiceManager:
     """Manages Log Collector service lifecycle."""
     
     def __init__(self):
         """Initialize the service manager."""
-        self.pid_file = DEFAULT_PID_FILE
-        self.log_file = DEFAULT_LOG_FILE
+        self.pid_file = app_context.pid_file
+        self.log_file = app_context.log_file
         
         # Ensure data directory exists
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(app_context.data_dir, exist_ok=True)
         
         # Initialize service state
         self.state = self._load_state()
-    
+        
     def _load_state(self):
         """Load service state from file."""
         if not SERVICE_STATE_FILE.exists():

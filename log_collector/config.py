@@ -7,17 +7,19 @@ import json
 import logging
 from pathlib import Path
 
+# Import AppContext
+from log_collector.app_context import AppContext
+
+# Create application context
+app_context = AppContext()
+
 # Application directories
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-LOG_DIR = BASE_DIR / "logs"
+BASE_DIR = app_context.base_dir
+DATA_DIR = app_context.data_dir
+LOG_DIR = app_context.log_dir
 
-# Ensure directories exist
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-
-# Source configuration file
-SOURCES_FILE = DATA_DIR / "sources.json"
+# Configuration files
+SOURCES_FILE = app_context.sources_file
 
 # Default settings
 DEFAULT_UDP_PROTOCOL = "UDP"
@@ -30,7 +32,7 @@ DEFAULT_COMPRESSION_LEVEL = 9  # Default compression level (9 is highest)
 
 # Configure logging
 logging.basicConfig(
-    filename=LOG_DIR / "log_collector.log",
+    filename=os.path.join(LOG_DIR, "log_collector.log"),
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -46,7 +48,7 @@ logger.addHandler(console_handler)
 
 def load_sources():
     """Load source configurations from JSON file."""
-    if not SOURCES_FILE.exists():
+    if not os.path.exists(SOURCES_FILE):
         return {}
     
     try:
@@ -65,3 +67,8 @@ def save_sources(sources):
     except Exception as e:
         logger.error(f"Error saving sources file: {e}")
         return False
+
+# Provide access to the app context throughout the application
+def get_app_context():
+    """Get the application context."""
+    return app_context

@@ -9,15 +9,17 @@ import re
 import hashlib
 import secrets
 import threading
-from pathlib import Path
 
 from log_collector.config import (
     logger,
-    DATA_DIR,
+    get_app_context,
 )
 
+# Get app context
+app_context = get_app_context()
+
 # Constants
-AUTH_FILE = DATA_DIR / "auth.json"
+AUTH_FILE = app_context.auth_file
 DEFAULT_USERNAME = "admin"
 DEFAULT_PASSWORD = "password"
 MAX_FAILED_ATTEMPTS = 6

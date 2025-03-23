@@ -10,11 +10,14 @@ import hashlib
 
 from log_collector.config import (
     logger,
-    DATA_DIR,
+    get_app_context,
 )
 
+# Get app context
+app_context = get_app_context()
+
 # Constants
-POLICY_FILE = DATA_DIR / "policy.json"
+POLICY_FILE = app_context.policy_file
 
 class AggregationManager:
     """Manages log aggregation policies and processing."""

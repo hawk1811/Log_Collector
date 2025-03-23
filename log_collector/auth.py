@@ -12,8 +12,8 @@ import threading
 
 from log_collector.config import (
     logger,
-    get_app_context,
 )
+from log_collector.app_context import get_app_context
 
 # Get app context
 app_context = get_app_context()
@@ -67,7 +67,7 @@ class AuthManager:
             logger.error(f"Error loading authentication data: {e}")
             # Initialize with default admin user if loading fails
             self._initialize_default_user()
-    
+        
     def _save_auth_data(self):
         """Save authentication data to file with debugging."""
         try:

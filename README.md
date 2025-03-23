@@ -40,6 +40,7 @@ A high-performance log collection and processing system capable of handling up t
 - **Authentication**: Secure password-based authentication system
 - **Health Monitoring**: Integrated health checks and performance monitoring
 - **Auto-Updates**: Built-in update checking and application management
+- **Service Management**: Run as a system service on Windows and Linux
 
 ## Dashboard View
 
@@ -52,21 +53,38 @@ A high-performance log collection and processing system capable of handling up t
 - Python 3.7 or higher
 - pip (Python package installer)
 
-### Installation Steps
+### Installation Methods
 
-1. Install from PyPI:
+#### Method 1: Install from PyPI
 
 ```bash
 pip install log-collector
 ```
 
-2. Or install from source:
+#### Method 2: Install from Source
 
 ```bash
 git clone https://github.com/hawk1811/Log_Collector.git
 cd log_collector
 pip install -e .
 ```
+
+#### Method 3: Build Standalone Executable
+
+For Windows:
+```bash
+cd log_collector
+build-win.bat
+```
+
+For Linux:
+```bash
+cd log_collector
+chmod +x build-lin.sh
+./build-lin.sh
+```
+
+The standalone executables will be created in the `dist` directory, along with a zip file containing the application.
 
 ## Quick Start
 
@@ -78,10 +96,37 @@ log_collector
 
 Default username and password:
 
-```bash
+```
 user: admin
 pass: password
 ```
+
+## Command-Line Options
+
+Log Collector supports various command-line options:
+
+```
+usage: log_collector [-h] [--version] [--no-interactive] [--daemon] [--data-dir DATA_DIR]
+                     [--log-dir LOG_DIR] [--pid-file PID_FILE] [--log-file LOG_FILE]
+                     [--service {start,stop,restart,status,install}] [--interactive]
+
+options:
+  -h, --help            show this help message and exit
+  --version             Show version information and exit
+  --no-interactive      Run in non-interactive mode (for service deployment)
+  --daemon              Run as a background daemon (detached from terminal)
+  --data-dir DATA_DIR   Path to data directory
+  --log-dir LOG_DIR     Path to log directory
+  --pid-file PID_FILE   Path to PID file when running as daemon
+  --log-file LOG_FILE   Path to service log file
+
+Service commands:
+  --service {start,stop,restart,status,install}
+                        Manage the Log Collector service
+  --interactive         Run service in interactive/foreground mode
+```
+
+### Common Usage Examples
 
 Run without the interactive interface (for service mode):
 
@@ -95,10 +140,29 @@ Run as a background daemon (detached from terminal):
 log_collector --no-interactive --daemon
 ```
 
-You can also specify a PID file location:
+Specify a PID file location:
 
 ```bash
 log_collector --no-interactive --daemon --pid-file=/var/run/log_collector.pid
+```
+
+Manage the service:
+
+```bash
+# Start the service
+log_collector --service start
+
+# Check service status
+log_collector --service status
+
+# Stop the service
+log_collector --service stop
+
+# Restart the service
+log_collector --service restart
+
+# Install as a Windows service (Windows only)
+log_collector --service install
 ```
 
 ## Configuration
@@ -158,12 +222,54 @@ The Log Collector system consists of the following main components:
 - **Aggregation Manager**: Manages log templates and aggregation rules
 - **Filter Manager**: Applies filtering rules to incoming logs
 - **Health Check**: Monitors system and source health
+- **Service Manager**: Manages service lifecycle and status
+- **Authentication**: Handles user authentication and password management
 
 Each source has dedicated threads:
 1. A listener thread that receives logs
 2. One or more processor threads that process and deliver logs
 
 Additional processor threads are automatically spawned when the queue size exceeds 10,000 logs.
+
+## Service Management
+
+Log Collector can run as a background service on both Windows and Linux:
+
+### Windows Service
+
+On Windows, Log Collector can be installed as a Windows Service:
+
+```bash
+log_collector --service install
+```
+
+This registers Log Collector as a system service that will start automatically on system boot.
+
+You can then manage the service using the standard Windows Service tools or with:
+
+```bash
+log_collector --service start
+log_collector --service stop
+log_collector --service restart
+log_collector --service status
+```
+
+### Linux Daemon
+
+On Linux, Log Collector can run as a daemon process:
+
+```bash
+log_collector --daemon --pid-file=/var/run/log_collector.pid
+```
+
+You can also use the `--service` commands to manage the daemon:
+
+```bash
+log_collector --service start
+log_collector --service stop
+log_collector --service restart
+log_collector --service status
+```
 
 ## Log Format
 
@@ -199,9 +305,25 @@ This data is sent to a configured HEC endpoint at regular intervals.
 - Compression level is configurable (1-9, with 9 being highest compression)
 - Adjust these values based on your specific requirements and hardware capabilities
 
+## Updates and Maintenance
+
+Log Collector includes a built-in update mechanism that can check for updates, pull changes from Git, and upgrade the application:
+
+1. Select "Check for Updates" from the main menu
+2. If updates are available, you'll see a summary of changes
+3. Confirm to download and apply the updates
+4. The application will restart automatically after updating
+
 ## Requirements
 
-See `requirements.txt` for detailed dependencies.
+See `requirements.txt` for detailed dependencies. Core requirements include:
+
+- requests>=2.25.0
+- psutil>=5.8.0
+- prompt_toolkit>=3.0.20
+- colorama>=0.4.4
+- bcrypt>=3.2.0
+- cryptography>=35.0.0
 
 ## License
 

@@ -60,10 +60,10 @@ Data and logs are stored in the data/ and logs/ directories.
 <Use 'LogCollector --h' for additional options>
 EOL
 
-# Create zip file
-echo "Creating zip archive..."
+# Create tar.gz archive instead of zip
+echo "Creating tar.gz archive..."
 cd ..
-zip -r dist/LogCollector-Linux.zip dist/* -x dist/LogCollector-Linux.zip
+tar -czvf dist/LogCollector-Linux.tar.gz -C dist .
 
 # Get absolute path for the dist folder
 dist_path=$(realpath dist)
@@ -76,8 +76,8 @@ echo "LogCollector application has been built successfully."
 echo "The executable and supporting files are located in:"
 echo "$dist_path"
 echo ""
-echo "The files have also been zipped to:"
-echo "$dist_path/LogCollector-Linux.zip"
+echo "The files have also been archived to:"
+echo "$dist_path/LogCollector-Linux.tar.gz"
 echo ""
 echo "README.txt Contents:"
 echo "-----------------------------------------------------"

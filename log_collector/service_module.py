@@ -11,20 +11,18 @@ import logging
 from pathlib import Path
 
 # Import Log Collector components
-from log_collector.source_manager import SourceManager
-from log_collector.processor import ProcessorManager
-from log_collector.listener import LogListener
-from log_collector.health_check import HealthCheck
-from log_collector.aggregation_manager import AggregationManager
-from log_collector.filter_manager import FilterManager
 from log_collector.config import (
     logger,
-    DATA_DIR,
+    get_app_context,
 )
 
+# Get app context
+app_context = get_app_context()
+
 # Constants
-DEFAULT_PID_FILE = DATA_DIR / "service.pid"
-DEFAULT_LOG_FILE = DATA_DIR / "service.log"
+DEFAULT_PID_FILE = app_context.pid_file
+DEFAULT_LOG_FILE = app_context.log_file
+
 
 def setup_service_logging(log_file):
     """Setup logging for the service"""

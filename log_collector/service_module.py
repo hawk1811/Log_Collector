@@ -29,6 +29,8 @@ app_context = get_app_context()
 DEFAULT_PID_FILE = app_context.pid_file
 DEFAULT_LOG_FILE = app_context.log_file
 
+# Flag to control verbose output
+VERBOSE_OUTPUT = False
 
 def setup_service_logging(log_file):
     """Setup logging for the service"""
@@ -748,9 +750,10 @@ def stop_linux_service(pid_file=DEFAULT_PID_FILE):
 # Cross-platform functions
 def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
     """Start the Log Collector service (cross-platform)"""
-    # Print diagnostic information
-    print(f"Current working directory: {os.getcwd()}")
-    print(f"Executable path: {sys.executable}")
+    # Only print diagnostic info in verbose mode
+    if VERBOSE_OUTPUT:
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"Executable path: {sys.executable}")
     
     # Check if already running
     pid = get_pid_from_file(pid_file)
@@ -780,8 +783,11 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 cmd = [sys.executable, main_script, "--service", "start", "--interactive",
                       "--pid-file", str(pid_file), "--log-file", str(log_file)]
             
-            # Print the command for debugging
-            print(f"Starting service with command: {' '.join(cmd)}")
+            # Only print detailed command in verbose mode
+            if VERBOSE_OUTPUT:
+                print(f"Starting service with command: {' '.join(cmd)}")
+            else:
+                print("Starting Log Collector service...")
             
             # Start the process based on platform
             if platform.system() == 'Windows':
@@ -804,9 +810,17 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                     time.sleep(2)
                     
                     if process.poll() is None:
-                        print("Service process started successfully")
-                        print(f"Service starting in background mode. Check logs at: {log_file}")
-                        print(f"PID file location: {pid_file}")
+                        # Get the actual PID
+                        actual_pid = get_pid_from_file(pid_file)
+                        if actual_pid:
+                            print(f"Service started successfully with PID {actual_pid}")
+                        else:
+                            print("Service started successfully")
+                        
+                        # Don't print detailed log info unless in verbose mode
+                        if VERBOSE_OUTPUT:
+                            print(f"Service starting in background mode. Check logs at: {log_file}")
+                            print(f"PID file location: {pid_file}")
                         return True
                     else:
                         stdout, stderr = process.communicate()
@@ -836,9 +850,17 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 
                 # Check if the process is running
                 if process.poll() is None:
-                    # Still running, which is good
-                    print(f"Service starting in background mode. Check logs at: {log_file}")
-                    print(f"PID file location: {pid_file}")
+                    # Get the actual PID
+                    actual_pid = get_pid_from_file(pid_file)
+                    if actual_pid:
+                        print(f"Service started successfully with PID {actual_pid}")
+                    else:
+                        print("Service started successfully")
+                    
+                    # Only print detailed info in verbose mode
+                    if VERBOSE_OUTPUT:
+                        print(f"Service starting in background mode. Check logs at: {log_file}")
+                        print(f"PID file location: {pid_file}")
                     return True
                 else:
                     # Process exited too quickly, there might be an error

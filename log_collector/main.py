@@ -11,7 +11,7 @@ import tempfile
 import platform  
 from pathlib import Path
 
-from log_collector.config import logger, DATA_DIR
+from log_collector.config import logger, get_app_context
 from log_collector.source_manager import SourceManager
 from log_collector.processor import ProcessorManager
 from log_collector.listener import LogListener
@@ -22,9 +22,11 @@ from log_collector import CLI
 from log_collector.utils import get_version
 from log_collector.filter_manager import FilterManager
 from log_collector.updater import restart_application
-# Import the new service module
-from log_collector.service_module import handle_service_command, DEFAULT_PID_FILE, DEFAULT_LOG_FILE
+# Import the service module
+from log_collector.service_module import handle_service_command
 
+# Get app context
+app_context = get_app_context()
 
 def signal_handler(signum, frame):
     """Handle termination signals."""
@@ -62,12 +64,12 @@ def parse_args():
     parser.add_argument(
         "--pid-file",
         help="Path to PID file when running as daemon",
-        default=str(DEFAULT_PID_FILE)
+        default=str(app_context.pid_file)
     )
     parser.add_argument(
         "--log-file",
         help="Path to service log file",
-        default=str(DEFAULT_LOG_FILE)
+        default=str(app_context.log_file)
     )
     
     # Add service command group
@@ -122,7 +124,14 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # TODO: Handle custom data and log directories
+    # Handle custom data and log directories if specified
+    if args.data_dir:
+        # We can't modify app_context directly, so we'll log this but won't use it
+        logger.warning("Custom data directory specified but not implemented in this version")
+    
+    if args.log_dir:
+        # We can't modify app_context directly, so we'll log this but won't use it
+        logger.warning("Custom log directory specified but not implemented in this version")
     
     try:
         # Initialize components
@@ -190,7 +199,7 @@ def main():
                 
             # Clean shutdown
             logger.info("Shutting down...")
-            if health_check.running:
+            if hasattr(health_check, 'running') and health_check.running:
                 health_check.stop()
             processor_manager.stop()
             listener_manager.stop()

@@ -12,6 +12,7 @@ flowchart TD
             cli_auth["cli_auth.py\n(Authentication)"]
             cli_aggregation["cli_aggregation.py\n(Aggregation rules)"]
             cli_filters["cli_filters.py\n(Filter rules)"]
+            cli_service["cli_service.py\n(Service management)"]
         end
         
         subgraph core_services["Core Services"]
@@ -21,6 +22,8 @@ flowchart TD
             health_check["health_check.py\n(System monitoring)"]
             aggregation_manager["aggregation_manager.py\n(Log aggregation)"]
             filter_manager["filter_manager.py\n(Log filtering)"]
+            service_module["service_module.py\n(Service implementation)"]
+            service_manager["service_manager.py\n(Service lifecycle)"]
         end
         
         subgraph authentication["Authentication"]
@@ -31,6 +34,12 @@ flowchart TD
             utils["utils.py\n(Helper functions)"]
             config["config.py\n(Global settings)"]
             updater["updater.py\n(Updates management)"]
+            app_context["app_context.py\n(Path management)"]
+        end
+        
+        subgraph build["Build Scripts"]
+            build_win["build-win.bat\n(Windows build)"]
+            build_lin["build-lin.sh\n(Linux build)"]
         end
     end
     
@@ -43,6 +52,7 @@ flowchart TD
     cli_main --> cli_auth
     cli_main --> cli_aggregation
     cli_main --> cli_filters
+    cli_main --> cli_service
     
     cli_sources --> cli_utils
     cli_health --> cli_utils
@@ -50,6 +60,7 @@ flowchart TD
     cli_auth --> cli_utils
     cli_aggregation --> cli_utils
     cli_filters --> cli_utils
+    cli_service --> cli_utils
     
     cli_main --> processor
     cli_main --> listener
@@ -59,6 +70,7 @@ flowchart TD
     cli_main --> filter_manager
     cli_main --> auth
     cli_main --> updater
+    cli_main --> service_manager
     
     processor --> source_manager
     processor --> aggregation_manager
@@ -72,19 +84,30 @@ flowchart TD
     health_check --> processor
     
     auth --> config
+    auth --> app_context
+    
+    service_manager --> service_module
+    service_module --> app_context
     
     aggregation_manager --> config
+    aggregation_manager --> app_context
     filter_manager --> config
+    filter_manager --> app_context
     source_manager --> config
+    source_manager --> app_context
+    
+    app_context --> config
     
     classDef module fill:#f9f,stroke:#333,stroke-width:2px,color:black;
     classDef cliModule fill:#bbf,stroke:#333,stroke-width:2px,color:black;
     classDef coreModule fill:#afa,stroke:#333,stroke-width:2px,color:black; 
     classDef authModule fill:#fdb,stroke:#333,stroke-width:2px,color:black;
     classDef utilModule fill:#ddd,stroke:#333,stroke-width:2px,color:black;
+    classDef buildModule fill:#faa,stroke:#333,stroke-width:2px,color:black;
     
     class main module;
-    class cli_init,cli_main,cli_utils,cli_sources,cli_health,cli_status,cli_auth,cli_aggregation,cli_filters cliModule;
-    class processor,source_manager,listener,health_check,aggregation_manager,filter_manager coreModule;
+    class cli_init,cli_main,cli_utils,cli_sources,cli_health,cli_status,cli_auth,cli_aggregation,cli_filters,cli_service cliModule;
+    class processor,source_manager,listener,health_check,aggregation_manager,filter_manager,service_module,service_manager coreModule;
     class auth authModule;
-    class utils,config,updater utilModule;
+    class utils,config,updater,app_context utilModule;
+    class build_win,build_lin buildModule;

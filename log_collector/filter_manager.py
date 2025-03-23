@@ -9,11 +9,14 @@ from pathlib import Path
 
 from log_collector.config import (
     logger,
-    DATA_DIR,
+    get_app_context,
 )
 
+# Get app context
+app_context = get_app_context()
+
 # Constants
-FILTER_FILE = DATA_DIR / "filters.json"
+FILTER_FILE = app_context.filter_file
 
 class FilterManager:
     """Manages log filter policies and processing."""

@@ -7,11 +7,11 @@ import argparse
 import threading
 import os
 import atexit
-import tempfile
-import platform  
+import platform
 from pathlib import Path
 
-from log_collector.config import logger, get_app_context
+from log_collector.config import logger
+from log_collector.app_context import get_app_context
 from log_collector.source_manager import SourceManager
 from log_collector.processor import ProcessorManager
 from log_collector.listener import LogListener
@@ -22,7 +22,6 @@ from log_collector import CLI
 from log_collector.utils import get_version
 from log_collector.filter_manager import FilterManager
 from log_collector.updater import restart_application
-# Import the service module
 from log_collector.service_module import handle_service_command
 
 # Get app context

@@ -84,6 +84,7 @@ def add_filter_rule(source_manager, aggregation_manager, filter_manager, cli):
     available_sources = {}
     
     for source_id, source in sources.items():
+        # Ensure the source has a template before adding to available sources
         if aggregation_manager and source_id in aggregation_manager.templates:
             available_sources[source_id] = source
     

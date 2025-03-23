@@ -114,8 +114,12 @@ class ProcessorManager:
                 if source_id not in self.aggregation_manager.templates:
                     try:
                         # Use this log as the template
-                        self.aggregation_manager.store_log_template(source_id, log_str)
-                        logger.info(f"Auto-created log template for source {source_id} from first log")
+                        template_fields = self.aggregation_manager.store_log_template(source_id, log_str)
+                        
+                        # Force save to ensure persistence
+                        self.aggregation_manager._save_policies()
+                        
+                        logger.info(f"Auto-created log template for source {source_id} from first log with {len(template_fields)} fields")
                     except Exception as e:
                         logger.error(f"Error creating template from first log: {e}")
         

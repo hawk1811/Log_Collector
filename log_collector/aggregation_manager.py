@@ -5,13 +5,12 @@ Handles log aggregation policy management and processing.
 import os
 import json
 import time
-from pathlib import Path
 import hashlib
 
 from log_collector.config import (
     logger,
-    get_app_context,
 )
+from log_collector.app_context import get_app_context
 
 # Get app context
 app_context = get_app_context()
@@ -43,7 +42,7 @@ class AggregationManager:
             logger.info(f"Loaded {len(self.policies)} aggregation policies")
         except Exception as e:
             logger.error(f"Error loading aggregation policies: {e}")
-    
+        
     def _save_policies(self):
         """Save aggregation policies to file."""
         try:

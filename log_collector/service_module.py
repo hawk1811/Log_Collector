@@ -748,6 +748,10 @@ def stop_linux_service(pid_file=DEFAULT_PID_FILE):
 # Cross-platform functions
 def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
     """Start the Log Collector service (cross-platform)"""
+    # Print diagnostic information
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Executable path: {sys.executable}")
+    
     # Check if already running
     pid = get_pid_from_file(pid_file)
     if pid is not None and is_process_running(pid):
@@ -766,7 +770,6 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 f.write("starting")
                 
             # Prepare command to start the service
-            # Get the path to the current executable instead of main.py
             if getattr(sys, 'frozen', False):
                 # Running as compiled executable
                 cmd = [sys.executable, "--service", "start", "--interactive",
@@ -777,23 +780,45 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                 cmd = [sys.executable, main_script, "--service", "start", "--interactive",
                       "--pid-file", str(pid_file), "--log-file", str(log_file)]
             
-            # Start the process
+            # Print the command for debugging
+            print(f"Starting service with command: {' '.join(cmd)}")
+            
+            # Start the process based on platform
             if platform.system() == 'Windows':
                 import subprocess
                 
-                # Use CREATE_NO_WINDOW to hide the console window
-                CREATE_NO_WINDOW = 0x08000000
-                
-                # Use DETACHED_PROCESS to detach from parent
-                DETACHED_PROCESS = 0x00000008
-                
-                process = subprocess.Popen(
-                    cmd,
-                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
-                    close_fds=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
+                try:
+                    # Use a simpler process creation approach
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = 0  # SW_HIDE
+                    
+                    process = subprocess.Popen(
+                        cmd,
+                        startupinfo=startupinfo,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
+                    
+                    # Wait briefly and check result
+                    time.sleep(2)
+                    
+                    if process.poll() is None:
+                        print("Service process started successfully")
+                        print(f"Service starting in background mode. Check logs at: {log_file}")
+                        print(f"PID file location: {pid_file}")
+                        return True
+                    else:
+                        stdout, stderr = process.communicate()
+                        print(f"Process exited with code: {process.returncode}")
+                        print(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
+                        print(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+                        return False
+                except Exception as e:
+                    print(f"Error creating process: {e}")
+                    if os.path.exists(pid_file):
+                        os.remove(pid_file)
+                    return False
             else:
                 # For Unix systems
                 import subprocess
@@ -806,20 +831,23 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
                     start_new_session=True  # Detaches from parent session
                 )
                 
-            # Give the process a moment to start
-            time.sleep(2)
-            
-            # Check if the process is running
-            if process.poll() is None:
-                # Still running, which is good
-                print(f"Service starting in background mode. Check logs at: {log_file}")
-                print(f"PID file location: {pid_file}")
-                return True
-            else:
-                # Process exited too quickly, there might be an error
-                stdout, stderr = process.communicate()
-                print(f"Error starting service: {stderr.decode('utf-8', errors='ignore')}")
-                return False
+                # Give the process a moment to start
+                time.sleep(2)
+                
+                # Check if the process is running
+                if process.poll() is None:
+                    # Still running, which is good
+                    print(f"Service starting in background mode. Check logs at: {log_file}")
+                    print(f"PID file location: {pid_file}")
+                    return True
+                else:
+                    # Process exited too quickly, there might be an error
+                    stdout, stderr = process.communicate()
+                    print(f"Error starting service: {stderr.decode('utf-8', errors='ignore')}")
+                    print(f"Output: {stdout.decode('utf-8', errors='ignore')}")
+                    if os.path.exists(pid_file):
+                        os.remove(pid_file)
+                    return False
                 
         except Exception as e:
             print(f"Error launching service process: {e}")
@@ -827,6 +855,12 @@ def start_service(interactive=False, pid_file=DEFAULT_PID_FILE, log_file=DEFAULT
             if os.path.exists(pid_file):
                 os.remove(pid_file)
             return False
+    
+    # Interactive mode (used by the subprocess created above)
+    if platform.system() == 'Windows':
+        return start_windows_service(True, pid_file, log_file)
+    else:
+        return start_linux_service(True, pid_file, log_file)
 
 def restart_service(pid_file=DEFAULT_PID_FILE, log_file=DEFAULT_LOG_FILE):
     """Restart the Log Collector service (cross-platform)"""

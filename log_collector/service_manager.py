@@ -7,12 +7,11 @@ import sys
 import time
 import platform
 import json
-from pathlib import Path
 
 from log_collector.config import (
     logger,
-    get_app_context,
 )
+from log_collector.app_context import get_app_context
 
 # Get app context
 app_context = get_app_context()
@@ -20,7 +19,7 @@ app_context = get_app_context()
 # Constants
 SERVICE_STATE_FILE = app_context.service_state_file
 
-# Import service module functions
+# Import our service module functions
 from log_collector.service_module import (
     start_service,
     stop_service,
@@ -43,7 +42,7 @@ class ServiceManager:
         
         # Initialize service state
         self.state = self._load_state()
-        
+    
     def _load_state(self):
         """Load service state from file."""
         if not SERVICE_STATE_FILE.exists():
@@ -83,7 +82,7 @@ class ServiceManager:
                 "pid_file": str(self.pid_file),
                 "log_file": str(self.log_file)
             }
-    
+        
     def _save_state(self, state):
         """Save service state to file."""
         try:

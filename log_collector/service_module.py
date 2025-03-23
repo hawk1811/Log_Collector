@@ -8,13 +8,11 @@ import time
 import signal
 import platform
 import logging
-from pathlib import Path
 
-# Import Log Collector components
 from log_collector.config import (
     logger,
-    get_app_context,
 )
+from log_collector.app_context import get_app_context
 
 # Get app context
 app_context = get_app_context()

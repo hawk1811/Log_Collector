@@ -39,7 +39,7 @@ class AggregationManager:
                 self.policies = data.get("policies", {})
                 self.templates = data.get("templates", {})
             
-            logger.info(f"Loaded {len(self.policies)} aggregation policies")
+            logger.info(f"Loaded {len(self.policies)} aggregation policies and {len(self.templates)} templates")
         except Exception as e:
             logger.error(f"Error loading aggregation policies: {e}")
         
@@ -90,8 +90,6 @@ class AggregationManager:
                     # Store it as a template
                     template_fields = self.store_log_template(source_id, sample_log)
                     logger.info(f"Auto-saved sample log template for source {source_id} with {len(template_fields)} fields")
-                    
-                    # Process the sample log right away to extract fields
                     return True
                 else:
                     logger.warning(f"No valid logs found in queue for source {source_id}")
@@ -853,10 +851,10 @@ class AggregationManager:
         return self.policies.get(source_id)
     
     def get_template(self, source_id):
-        """Get a log template.
+        """Get a log template for a source.
         
         Args:
-            source_id: Source ID
+            source_id: Source ID to get template for
             
         Returns:
             dict: Template or None

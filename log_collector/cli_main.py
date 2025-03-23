@@ -255,4 +255,4 @@ class CLI:
         # Check service status
         if not self.service_manager.is_running():
             print(f"{Fore.YELLOW}Note: The Log Collector service is not running.{ColorStyle.RESET_ALL}")
-            print(f"{Fore.YELLOW}You can start it using 'python log_collector_service.py start' or from the Service Management menu.{ColorStyle.RESET_ALL}")
+            print(f"{Fore.YELLOW}You can start it using 'LogCollector --service start' or from the Service Management menu.{ColorStyle.RESET_ALL}")
